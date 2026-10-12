@@ -21,8 +21,8 @@ var update = flag.Bool("update", false, "rewrite the golden files of the example
 
 // TestExamples runs every example notebook, headlessly, and compares what
 // each cell did with testdata/golden. Numbers are compared to 1e-9 relative,
-// so that a last-bit difference between architectures (FMA on arm64, ...)
-// is not a failure; everything else must match exactly. The tolerances map
+// (or 1e-11 absolute), so that a last-bit difference between architectures
+// (FMA on arm64, ...) is not a failure; everything else must match exactly. The tolerances map
 // gives a notebook a looser one, with the reason.
 var tolerances = map[string]float64{
 	// An adaptive solver's step count depends on the last bits of every
@@ -104,7 +104,9 @@ func transcript(rs []Result) string {
 
 var number = regexp.MustCompile(`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`)
 
-// sameModuloRounding compares two transcripts, numbers to tol relative.
+// sameModuloRounding compares two transcripts, numbers to tol relative or
+// 1e-11 absolute: an error estimate of 1e-13 is rounding noise, and differs
+// between amd64 and arm64.
 func sameModuloRounding(got, want string, tol float64) string {
 	gn, wn := number.FindAllString(got, -1), number.FindAllString(want, -1)
 	if g, w := number.ReplaceAllString(got, "#"), number.ReplaceAllString(want, "#"); g != w {
@@ -113,7 +115,7 @@ func sameModuloRounding(got, want string, tol float64) string {
 	for i := range gn {
 		g, _ := strconv.ParseFloat(gn[i], 64)
 		w, _ := strconv.ParseFloat(wn[i], 64)
-		if g != w && math.Abs(g-w) > tol*math.Max(math.Abs(g), math.Abs(w)) {
+		if d := math.Abs(g - w); d > 1e-11 && d > tol*math.Max(math.Abs(g), math.Abs(w)) {
 			return fmt.Sprintf("%s where %s was expected", gn[i], wn[i])
 		}
 	}
