@@ -27,6 +27,7 @@ func TestCommitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n")) // a Windows checkout
 	if !bytes.Equal(got, want) {
 		t.Error("symbols/zz_generics.go is not what genwrap writes: run go generate ./symbols")
 	}
