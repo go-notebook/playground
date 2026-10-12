@@ -1,0 +1,11 @@
+== cell 0 (line 6)
+-- show
+{NObs:500 Min:4.866683118137405 Max:15.82772493201466 Mean:9.973747699066132 Variance:3.6858940534591844 Skewness:0.0934086620494982 Kurtosis:-0.05164966672592408}
+== cell 1 (line 21)
+-- output
+loc = 9.9737, scale = 1.9179
+== cell 2 (line 28)
+-- show
+{Statistic:0.029276017613182215 PValue:0.7733500489188427 StatisticLocation:10.961493317811819 StatisticSign:1}
+== cell 3 (line 34)
+-- figure: <svg> 432pt x 252pt

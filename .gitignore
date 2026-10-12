@@ -1,0 +1,6 @@
+# What cmd/build writes when run here.
+/playground/
+/public/
+
+# The headless page check installs Playwright here.
+node_modules/

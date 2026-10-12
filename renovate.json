@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>go-notebook/.github"],
+  "packageRules": [
+    {
+      "description": [
+        "Stay on yaegi v0.16.1. internal/yaegi is a patched copy of its interpreter at that version (see internal/yaegi/README.md), and go.mod's yaegi provides the stdlib/generic sources and the extract command that must match it. Upgrading is copying the new interp/, re-applying the patches and regenerating symbols/: by hand."
+      ],
+      "matchPackageNames": ["github.com/traefik/yaegi"],
+      "enabled": false
+    }
+  ]
+}

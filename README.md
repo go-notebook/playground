@@ -1,2 +1,99 @@
-# playground
-Go notebooks in the browser: cells interpreted in WebAssembly, no server
+# playground — go-notebook
+
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.27.2%2B-00ADD8)](https://go.dev/dl/)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](.github/workflows/ci.yml)
+
+**Go notebooks in the browser: cells interpreted in WebAssembly, no server.**
+
+A [go-notebook](https://github.com/go-notebook/notebook) is a Markdown document whose ` ```go ` blocks are cells. The playground shows one as a page: the prose as text, each cell as an editor, and under it what the cell printed, the value of its last expression and its figures, inline as SVG. Ctrl+Enter (⌘+Enter) runs the notebook again, in the tab: a Go interpreter, [yaegi](https://github.com/traefik/yaegi), compiled to WebAssembly, runs the cells, and the libraries they call — [go-statistics](https://github.com/go-statistics/stats), [go-numerics](https://github.com/go-numerics) (`special`, `optimize`, `integrate`), [go-ndarray](https://github.com/go-ndarray/ndarray) (with `random` and `fft`) and [go-plot](https://github.com/go-plot/plot) — run compiled, at WebAssembly speed. Only the notebook's own code is interpreted.
+
+It is deployed as `/playground/` on [go-statistics.github.io](https://go-statistics.github.io/playground/) and [go-numerics.github.io](https://go-numerics.github.io/playground/), each with its own example notebooks.
+
+```go
+import (
+	"github.com/go-ndarray/ndarray/random"
+	"github.com/go-statistics/stats"
+)
+
+x, _ := random.DefaultRNG(42).Normal(10, 2, 500)
+fit, err := stats.FitNormal(x, nil)
+stats.KSTest1Samp(x, fit.CDF, nil) // shown: {Statistic:0.0292… PValue:0.773… …}
+```
+
+## How it works
+
+The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaScript of its own (plus Go's `wasm_exec.js`) own the DOM; the Go core is called rarely, on big buffers.
+
+- **[web/](web/)** — `index.html`, `playground.css`, `playground.js` and `worker.js`. The page renders the cells, and on each run posts the **whole notebook** (as Markdown) to a Web Worker and gets back **every cell's results** (as JSON): one call in, one string out, never a call per cell or per widget. The worker keeps a long run from freezing the page, and Stop ends it.
+- **[cmd/playground](cmd/playground/)** — the WebAssembly core, a few lines: `playgroundRun(markdown)` and `playgroundCells(markdown)`.
+- **[engine/](engine/)** — runs a notebook in a yaegi interpreter, natively in the tests and in WebAssembly in the page. It splits the notebook with [`notebook/format`](https://github.com/go-notebook/notebook/tree/main/format) and follows go-notebook's conventions:
+  - the cells run in document order and share one top-level scope: what a cell defines, the cells after it see;
+  - a cell's final expression is shown; a final call returning `(value, error)` shows the value, or fails the cell with the error; other calls with several results (`fmt.Println`'s `(n, err)`) are run for their effect;
+  - a value that draws itself as SVG — a go-plot `*plot.Figure` — is shown as a figure; a struct is shown with its exported fields named;
+  - a failing cell stops the run, and the cells after it say they were not run; an error gives the line in the cell, and a panic the lines of the calls it went through.
+- **[symbols/](symbols/)** — the packages a cell may import, as yaegi symbol tables written by `yaegi extract` (`go generate ./symbols`; CI checks that the committed tables are what it writes): a subset of the standard library (`fmt`, `math`, `math/rand`, `math/rand/v2`, `math/cmplx`, `math/bits`, `math/big`, `sort`, `strings`, `strconv`, `errors`, `time`, `bytes`, `bufio`, `io`, `text/tabwriter`, `unicode`, `unicode/utf8`; `cmp`, `maps` and `slices` from yaegi's source) and the libraries above. Nothing reaches the network or a file system.
+- **[internal/yaegi](internal/yaegi/)** — yaegi v0.16.1's interpreter with three fixes the playground needs; [its README](internal/yaegi/README.md) lists them.
+- **[cmd/build](cmd/build/)** — writes a deployable directory from a set of notebooks. It first **runs every notebook natively and fails if a cell fails**, then builds the WebAssembly core from source (`GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w"`), copies Go's `wasm_exec.js` and writes the page with the notebooks in it.
+
+### Deploying it on a site
+
+A site keeps its notebooks and a small Go module that pins the playground:
+
+```
+playground/
+  go.mod          require github.com/go-notebook/playground v0.1.0
+  tools.go        //go:build tools — import _ "github.com/go-notebook/playground/cmd/build"
+  notebooks/*.md
+```
+
+and its deploy workflow builds the page into the site, from that pinned version:
+
+```sh
+cd playground && go run github.com/go-notebook/playground/cmd/build \
+    -o ../public/playground -org go-statistics -home https://go-statistics.github.io/ \
+    -accent '#9e520f' -accent-dark '#f2b36b' notebooks/*.md
+```
+
+The WebAssembly is never committed: every deploy builds it from the version `go.mod` and `go.sum` pin.
+
+## Size and speed
+
+| | |
+|---|---|
+| `playground.wasm` | 29.8 MB; 7.3 MB compressed with `gzip -9` |
+| page load → runtime ready → first result | 157 ms → 236 ms, served from localhost (Chrome, Apple silicon) |
+
+Where the size goes, measured by building without each part: the interpreter with the standard library and go-ndarray, 3.6 MB compressed; go-plot (its DejaVu Sans faces, go-tex's math fonts, the rasteriser) 2.5 MB; go-statistics 0.6 MB; go-numerics 0.5 MB. yaegi calls methods by name through `reflect`, so the linker keeps every exported method of every type the tables reach: it cannot drop what a notebook might call.
+
+The examples run in 10 to 80 ms each in the page. Interpreted code is much slower than compiled code — a loop of a million float additions takes about 36 ms in the interpreter, natively, against well under a millisecond compiled — which is why the libraries are compiled in, and why a notebook should hand them whole arrays and functions rather than loop itself.
+
+## What works
+
+- Statements, `:=`, loops, closures, functions, methods, struct types, interfaces, goroutines and channels, `defer`, labels: the cells are Go.
+- **Calling the libraries**, including with Go functions: `optimize.CurveFit(model, …)`, `integrate.SolveIVP(f, …)`, `stats.Bootstrap(…, statistic, …)`, `integrate.Quad(func(x float64) float64 {…}, …)`. The callback is interpreted; the solver is compiled.
+- **go-statistics' generic functions.** yaegi cannot export a generic function (it has no value until its type parameters are fixed), so `yaegi extract` leaves out every one, and most of stats is generic (`Mean[D Data]`, `FitNormal[D Data]`, `TTestInd[D Data]`…). [`internal/genwrap`](internal/genwrap/) writes an instantiated wrapper for each of the 89 (`go generate ./symbols`; a test fails when they are not what it writes), in which:
+  - a parameter that is the data (`x D`, `samples ...D`) is an `any` that takes a `[]float64`, a `*ndarray.Array` of any shape and dtype (read row-major as float64, as stats reads it) or a `[]int`: `stats.Mean(xs, nil)`, `stats.Mean(arr, nil)` and `stats.TTestInd(a, b, nil)` all work;
+  - every other use of the type parameter is `[]float64`: `stats.ZScore(arr, nil)` returns a `[]float64`, not an array of `arr`'s shape, and `stats.Bootstrap` takes a `[][]float64`.
+- go-ndarray's three generic functions: `ndarray.Data(a)` (a `[]float64` view; `ok` is false for another dtype), `ndarray.Item(a, i…)` (a float64), and `ndarray.FromSlice(s, shape…)` for a slice of any element type an array holds (a `[]int` becomes int64).
+- A type the notebook declares with a `String` method prints through it, with `fmt` and when shown.
+
+## What does not
+
+These are yaegi's limits, met while writing the examples, and listed so that nobody has to find them again:
+
+- **Generic functions declared in a cell** work only in simple cases: with two type parameters, inference goes wrong (`Map[T, U any]` called with a `func(int) string` fails with `cannot use type func(int) string as type func(int) int`).
+- **`slices`, `maps` and `cmp`** come from yaegi's copy of their Go 1.22 source, and only part of it compiles: `slices.Contains`, `slices.Index`, `slices.Equal` and `cmp.Compare` work; `slices.Sort`, `slices.Max`, `slices.Reverse`, `slices.Sorted`, `maps.Clone` and `maps.Keys` do not. Use `sort.Float64s`, or the libraries.
+- **The float constants of compiled packages are `float64` values**, not untyped constants. yaegi refused to mix an untyped constant of a compiled package with one of the notebook (`math.Pi * 50.0` was `mismatched types untyped float64 and untyped float`), so the tables give them as `float64`: `2 * math.Pi`, `math.Pi * 50.0`, `const tau = 2 * math.Pi` and `var x float32 = math.Pi` work, `const c float32 = math.Pi` does not (`constant definition loop`): write `float32(math.Pi)`.
+- An unexported field of a struct the notebook declares shows as `X` + its name (`{A:1 Xb:2}`): yaegi exports it to build the type with `reflect`.
+- No `os`, `net`, `unsafe`, `reflect`, `syscall` or `testing`. An import of a package the playground does not have says which ones it has.
+- Cells run in document order, all of them, on each run. go-notebook's kernel orders cells by what they use and runs only what changed; the playground runs the whole notebook again, which takes milliseconds, so the page always shows the state the code makes. A cell may define a name again (yaegi allows it); the kernel would refuse.
+- A yaegi defect that crashes the interpreter is caught and reported as `the interpreter failed on this code (a yaegi defect)`, rather than taking the page down.
+
+## Tests
+
+`go test ./...` runs every example notebook headlessly and compares each cell's output with [`engine/testdata/golden`](engine/testdata/golden/) (numbers to 1e-9 relative, so that a last-bit difference between architectures is not a failure; `-update` rewrites them); it tests the cell conventions and each patched yaegi defect, the symbol tables (every generated wrapper is called, every interface wrapper reaches its function) and `cmd/build`, which builds the real WebAssembly core. Coverage is 100% outside `internal/yaegi`. CI also builds both example sites and runs [`web/test/page.mjs`](web/test/page.mjs) in headless Chromium: the page loads, every example runs, every cell gets a result, none fails, and every figure is an `<svg>`. The same script checks a deployed playground: `node web/test/page.mjs https://go-statistics.github.io/playground/`.
+
+## License
+
+BSD-3-Clause. See [LICENSE](LICENSE). `internal/yaegi` is yaegi's code, under the Apache License 2.0: see [its LICENSE](internal/yaegi/LICENSE).

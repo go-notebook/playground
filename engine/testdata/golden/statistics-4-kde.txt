@@ -1,0 +1,11 @@
+== cell 0 (line 6)
+-- show
+800
+== cell 1 (line 21)
+-- show
+0.2626527804403767
+== cell 2 (line 26)
+-- figure: <svg> 432pt x 252pt
+== cell 3 (line 44)
+-- show
+0.10173058111795866
