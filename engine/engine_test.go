@@ -43,7 +43,8 @@ func TestExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := transcript(Run(string(src)))
+			// A Windows checkout has CRLF line endings.
+			got := transcript(Run(strings.ReplaceAll(string(src), "\r\n", "\n")))
 			golden := filepath.Join("testdata", "golden", name+".txt")
 			if *update {
 				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
@@ -59,7 +60,7 @@ func TestExamples(t *testing.T) {
 			if tol == 0 {
 				tol = 1e-9
 			}
-			if msg := sameModuloRounding(got, string(want), tol); msg != "" {
+			if msg := sameModuloRounding(got, strings.ReplaceAll(string(want), "\r\n", "\n"), tol); msg != "" {
 				t.Errorf("%s differs from %s: %s\n--- got:\n%s", f, golden, msg, got)
 			}
 			if strings.Contains(got, "-- error") || strings.Contains(got, "-- skipped") {
