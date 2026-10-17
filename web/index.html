@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<meta name="description" content="{{.Description}}">
+<link rel="stylesheet" href="playground.css">
+<style>
+:root { --accent: {{.Accent}}; --accent-bright: {{.AccentDark}}; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="home" href="{{.Home}}">← {{.Org}}</a>
+  <h1>Playground</h1>
+  <nav id="examples" aria-label="Example notebooks"></nav>
+</header>
+<main>
+  <div class="tools">
+    <button id="run" type="button" disabled title="Run every cell (Ctrl+Enter or ⌘+Enter in a cell)">Run</button>
+    <button id="stop" type="button" hidden>Stop</button>
+    <button id="reset" type="button" title="Back to the example as published">Reset</button>
+    <button id="download" type="button" title="Save the notebook as Markdown">Download .md</button>
+    <label class="open">Open .md<input id="open" type="file" accept=".md,text/markdown"></label>
+    <span id="status" role="status">Loading the Go runtime…</span>
+  </div>
+  <article id="notebook"></article>
+</main>
+<footer>
+  <p>Each <code>```go</code> block of the Markdown is a cell; what a cell defines, the cells after it see.
+  The cells are Go, interpreted by <a href="https://github.com/traefik/yaegi">yaegi</a> in WebAssembly in this tab — no server.
+  Calls into {{.Libraries}} run compiled.
+  <a href="https://github.com/go-notebook/playground#what-works">What works, and what does not.</a></p>
+  <p class="version">{{.Version}}</p>
+</footer>
+<script id="examples-data" type="application/json">{{.Examples}}</script>
+<script src="playground.js"></script>
+</body>
+</html>

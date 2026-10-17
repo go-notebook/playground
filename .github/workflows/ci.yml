@@ -1,0 +1,152 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Copied from go-notebook/notebook's ci.yml. Differences: internal/yaegi (a
+# patched copy of yaegi's interpreter, Apache-2.0, see its README) is
+# outside the coverage gate; the symbol tables must be what `go generate`
+# writes; and the page job runs the built page in headless Chromium.
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - run: go version
+      # Not on Windows: its checkout converts line endings to CRLF.
+      - name: gofmt
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          [ -z "$unformatted" ] || { echo "::error::not gofmt-formatted:"; echo "$unformatted"; exit 1; }
+      - run: go vet ./...
+      - run: go build ./...
+      - name: The WebAssembly core builds
+        shell: bash
+        run: GOOS=js GOARCH=wasm go vet ./cmd/playground && GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/playground
+      - name: Test + 100% coverage gate
+        shell: bash
+        run: |
+          COVERPKG=$(go list ./... | grep -v /internal/yaegi/ | paste -sd, -)
+          go test -race -coverpkg="$COVERPKG" -coverprofile=cover.out ./...
+          go tool cover -func=cover.out | tail -n 25
+          cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "coverage: ${cov}%"
+          awk -v t="$cov" 'BEGIN { exit !(t+0 >= 100.0) }' || {
+            echo "::error::coverage ${cov}% < 100%"; exit 1; }
+
+  generated:
+    name: the symbol tables are what go generate writes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - run: go generate ./symbols
+      - name: No difference
+        run: |
+          git add -N .
+          git diff --exit-code --stat || { echo "::error::symbols/ is not what go generate ./symbols writes: run it and commit"; exit 1; }
+
+  page:
+    name: the page runs every example (headless Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build both playgrounds
+        run: |
+          go run ./cmd/build -o site/statistics -org go-statistics examples/statistics/*.md
+          go run ./cmd/build -o site/numerics -org go-numerics examples/numerics/*.md
+      - name: Install Playwright and Chromium
+        working-directory: web/test
+        run: npm install && npx playwright install --with-deps chromium
+      - run: node web/test/page.mjs site/statistics
+      - run: node web/test/page.mjs site/numerics
+
+  security:
+    name: govulncheck + fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Fuzz the cell splitter for 60 s
+        run: go test -run '^$' -fuzz FuzzSplit -fuzztime 60s ./engine
+
+  arch-native:
+    name: arch arm64
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - run: go vet ./... && go test ./...
+
+  arch-qemu:
+    name: arch ${{ matrix.goarch }} (qemu)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goarch: riscv64, qemu: qemu-riscv64-static }
+          - { goarch: loong64, qemu: qemu-loongarch64-static }
+          - { goarch: ppc64le, qemu: qemu-ppc64le-static }
+          - { goarch: s390x,   qemu: qemu-s390x-static }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - name: Vet + test under qemu (${{ matrix.goarch }})
+        run: |
+          GOOS=linux GOARCH=${{ matrix.goarch }} go vet ./...
+          GOARCH=${{ matrix.goarch }} go test -short -exec=${{ matrix.qemu }} ./...
+
+  cross:
+    name: compile on every target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - name: go test -c for every GOOS/GOARCH
+        shell: bash
+        run: |
+          fail=0
+          for t in $(go tool dist list); do
+            os=${t%/*}; arch=${t#*/}
+            case $os in android|ios) continue ;; esac
+            for p in $(go list ./...); do
+              GOOS=$os GOARCH=$arch go test -c -o /dev/null "$p" >/dev/null 2>err.txt || { echo "::error::$t $p"; cat err.txt; fail=1; }
+            done
+          done
+          exit $fail

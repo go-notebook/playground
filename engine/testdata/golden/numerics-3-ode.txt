@@ -1,0 +1,8 @@
+== cell 0 (line 6)
+-- output
+RK45:  4667 steps, 32246 evaluations
+== cell 1 (line 28)
+-- output
+Radau: 913 steps, 7482 evaluations, 616 LU decompositions
+== cell 2 (line 35)
+-- figure: <svg> 432pt x 252pt

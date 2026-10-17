@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "The headless check of the playground page (page.mjs).",
+  "devDependencies": {
+    "playwright": "1.64.0"
+  }
+}

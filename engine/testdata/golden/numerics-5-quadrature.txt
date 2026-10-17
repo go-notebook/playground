@@ -1,0 +1,12 @@
+== cell 0 (line 8)
+-- output
+0.886226925452758  (error estimate 7.1e-09, 135 evaluations)
+0.886226925452758  exact
+== cell 1 (line 24)
+-- show
+{Value:-3.9999999999999827 AbsErr:2.3359092438113294e-13 NEval:315 NIntervals:8 CycleIer:[]}
+== cell 2 (line 30)
+-- output
+x =  0.5   quad 0.938469807240813   special.J0 0.938469807240813
+x =  2.0   quad 0.223890779141236   special.J0 0.223890779141236
+x = 10.0   quad -0.245935764451348   special.J0 -0.245935764451348

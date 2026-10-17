@@ -1,0 +1,8 @@
+== cell 0 (line 6)
+== cell 1 (line 27)
+-- output
+a = 2.5184 ± 0.0409
+b = 0.4114 ± 0.0106
+ω = 2.9947 ± 0.0076
+== cell 2 (line 37)
+-- figure: <svg> 432pt x 252pt

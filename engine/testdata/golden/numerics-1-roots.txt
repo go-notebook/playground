@@ -1,0 +1,9 @@
+== cell 0 (line 6)
+-- output
+root 0.739085133215156 after 7 iterations, f(root) = 7.9e-15
+== cell 1 (line 21)
+-- output
+root 0.739085133215161 after 4 iterations
+== cell 2 (line 29)
+-- show
+[1.9318516525849732 0.5176380901870086]

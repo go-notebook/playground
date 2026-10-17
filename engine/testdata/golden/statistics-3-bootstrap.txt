@@ -1,0 +1,8 @@
+== cell 0 (line 6)
+-- show
+2.3725982149076135
+== cell 1 (line 24)
+-- output
+95% CI for the median: [1.813, 2.743], standard error 0.241
+== cell 2 (line 37)
+-- figure: <svg> 432pt x 252pt

@@ -1,0 +1,12 @@
+== cell 0 (line 6)
+-- output
+mean a = 4.605, mean b = 5.642
+== cell 1 (line 23)
+-- output
+t = -5.3435, df = 77.12, p = 8.962e-07
+== cell 2 (line 30)
+-- show
+{Low:-1.424190063418329 High:-0.6509202950928105}
+== cell 3 (line 36)
+-- show
+{Statistic:320 PValue:3.95009724278323e-06 ZStatistic:NaN}
