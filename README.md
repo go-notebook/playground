@@ -59,7 +59,7 @@ The WebAssembly is never committed: every deploy builds it from the version `go.
 
 ## Size and speed
 
-Measured on the live pages on 2026-10-17, v0.1.0 (headless Chromium from a fresh profile, so with an empty browser cache, over a home fibre connection in France):
+Measured on the live pages on 2026-10-17, v0.1.0 (headless Chromium from a fresh profile, so with an empty browser cache, from a workstation in Europe):
 
 | | |
 |---|---|
