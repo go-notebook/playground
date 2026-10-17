@@ -59,14 +59,19 @@ The WebAssembly is never committed: every deploy builds it from the version `go.
 
 ## Size and speed
 
+Measured on the live pages on 2026-10-17, v0.1.0 (headless Chromium from a fresh profile, so with an empty browser cache, from a workstation in Europe):
+
 | | |
 |---|---|
-| `playground.wasm` | 29.8 MB; 7.3 MB compressed with `gzip -9` |
-| page load → runtime ready → first result | 157 ms → 236 ms, served from localhost (Chrome, Apple silicon) |
+| `playground.wasm` on the wire | **7.56 MB** (7 561 584 bytes; GitHub Pages serves it `Content-Encoding: gzip`, `Content-Type: application/wasm`); 29.8 MB uncompressed |
+| page load → runtime ready → first result | **0.73–0.80 s → 0.81–0.85 s** on the first visit (the CDN cold); 0.22–0.36 s → 0.26–0.43 s on the next ones |
+| one run of an example | 7 ms (quadrature) to 220 ms (the stiff ODE, 32 000 interpreted right-hand-side calls) |
+
+`node web/test/page.mjs https://go-statistics.github.io/playground/` measures it again.
 
 Where the size goes, measured by building without each part: the interpreter with the standard library and go-ndarray, 3.6 MB compressed; go-plot (its DejaVu Sans faces, go-tex's math fonts, the rasteriser) 2.5 MB; go-statistics 0.6 MB; go-numerics 0.5 MB. yaegi calls methods by name through `reflect`, so the linker keeps every exported method of every type the tables reach: it cannot drop what a notebook might call.
 
-The examples run in 10 to 80 ms each in the page. Interpreted code is much slower than compiled code — a loop of a million float additions takes about 36 ms in the interpreter, natively, against well under a millisecond compiled — which is why the libraries are compiled in, and why a notebook should hand them whole arrays and functions rather than loop itself.
+Interpreted code is much slower than compiled code — a loop of a million float additions takes about 36 ms in the interpreter, natively, against well under a millisecond compiled — which is why the libraries are compiled in, and why a notebook should hand them whole arrays and functions rather than loop itself.
 
 ## What works
 
