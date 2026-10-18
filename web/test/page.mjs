@@ -46,6 +46,18 @@ const fail = (msg) => {
 try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => fail('page error: ' + e.message));
+  // The Ruby core must be fetched only once a notebook with a Ruby cell is
+  // open, and how much of it crosses the wire is part of the report.
+  let rubyFetched = null;
+  page.on('requestfinished', async (req) => {
+    if (!req.url().endsWith('/playground-ruby.wasm')) return;
+    const sizes = await req.sizes().catch(() => null);
+    const resp = await req.response();
+    rubyFetched = {
+      wire: sizes ? sizes.responseBodySize + sizes.responseHeadersSize : null,
+      encoding: resp ? (await resp.allHeaders())['content-encoding'] || 'identity' : null,
+    };
+  });
   await page.goto(url);
   console.log('title:', await page.title());
   await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 120000 });
@@ -53,11 +65,24 @@ try {
   console.log(`runtime ready ${Math.round(t.runtimeReady)} ms, first result ${Math.round(t.firstResult)} ms after navigation start`);
 
   const names = await page.$$eval('#examples a', (as) => as.map((a) => a.dataset.name));
+  let seenRuby = false;
   for (const [i, name] of names.entries()) {
+    const ruby = await page.evaluate((n) => {
+      const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
+      return ex.cells.some((c) => c.lang === 'ruby');
+    }, name);
+    if (!ruby && rubyFetched && !seenRuby) fail(`${name}: the Ruby core was fetched for a notebook without Ruby`);
     if (i > 0) {
+      const t0 = Date.now();
       await page.evaluate(() => (document.body.dataset.state = 'switching'));
       await page.evaluate((n) => (location.hash = n), name);
-      await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 120000 });
+      await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
+      if (ruby) {
+        seenRuby = true;
+        const t = await page.evaluate(() => window.playgroundTimings);
+        console.log(`${name}: Ruby core fetched (${rubyFetched ? rubyFetched.wire + ' bytes on the wire, ' + rubyFetched.encoding : 'not seen'}); first Ruby result ${Date.now() - t0} ms after opening the notebook (runtime ready ${Math.round(t.rubyReady)} ms after navigation start)`);
+        if (!rubyFetched) fail(`${name}: has Ruby cells but the Ruby core was not fetched`);
+      }
     }
     const r = await page.evaluate(() => {
       const cells = [...document.querySelectorAll('#notebook .cell')];

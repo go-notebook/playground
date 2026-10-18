@@ -38,7 +38,11 @@ jobs:
       - run: go build ./...
       - name: The WebAssembly core builds
         shell: bash
-        run: GOOS=js GOARCH=wasm go vet ./cmd/playground && GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/playground
+        run: |
+          GOOS=js GOARCH=wasm go vet ./cmd/playground && GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/playground
+          # The core with Ruby cells, which the page loads for a notebook that has one.
+          GOOS=js GOARCH=wasm go vet -tags ruby,rbgo_core ./cmd/playground ./engine
+          GOOS=js GOARCH=wasm go build -tags ruby,rbgo_core -o /dev/null ./cmd/playground
       - name: Test + 100% coverage gate
         shell: bash
         run: |
