@@ -41,6 +41,11 @@ func (s *session) rubyCell(src string) (output string, shown []map[string]string
 	s.shown = nil
 	if s.ruby == nil {
 		s.ruby = &rubySide{rs: cells.NewWriting(&s.out, &s.out), values: map[string]any{}, imports: map[string]string{}}
+		// rbgo's browser build has a JS module, a bridge to the page's
+		// JavaScript. A notebook needs none of it, and in the playground's
+		// worker it would reach fetch, storage and the page's messages: it is
+		// removed before the first cell.
+		s.ruby.rs.Run(cells.Cell{Source: "Object.send(:remove_const, :JS) if Object.const_defined?(:JS)", File: "(setup)", Line: 1}, nil, nil)
 		mustUse(s.i, interp.Exports{rubyPkg + "/ruby": {"Get": reflect.ValueOf(func(name string) any { return s.ruby.values[name] })}})
 		mustEval(s.i, `import __ruby "`+rubyPkg+`"`)
 	}

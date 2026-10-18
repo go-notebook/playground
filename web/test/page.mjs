@@ -64,6 +64,26 @@ try {
   const t = await page.evaluate(() => window.playgroundTimings);
   console.log(`runtime ready ${Math.round(t.runtimeReady)} ms, first result ${Math.round(t.firstResult)} ms after navigation start`);
 
+  // A figure cannot run code in the page: whatever SVG a cell shows (a Go
+  // value's SaveSVG, a Ruby cell's) loses its scripts, handlers, animations
+  // and javascript: links.
+  const hostile = [
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a href="java&#9;script:alert(1)"><text>x</text></a></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a><set attributeName="href" to="javascript:alert(1)"/><text>x</text></a></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><animate attributeName="onclick" values="alert(1)"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><iframe src="x"/></foreignObject></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><a href=" data:text/html,x"><text>x</text></a></svg>',
+  ];
+  for (const h of hostile) {
+    const out = await page.evaluate((t) => window.playgroundSanitize(t), h);
+    if (/script|onload|onclick|<set|<animate|foreignObject|iframe|data:text/i.test(out || '')) fail('the sanitizer let through: ' + out);
+  }
+  const kept = await page.evaluate(() =>
+    window.playgroundSanitize('<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AA=="/></svg>'));
+  if (!/data:image\/png/.test(kept || '')) fail('the sanitizer dropped an embedded PNG: ' + kept);
+
   const names = await page.$$eval('#examples a', (as) => as.map((a) => a.dataset.name));
   let seenRuby = false;
   for (const [i, name] of names.entries()) {
@@ -101,6 +121,17 @@ try {
     if (r.errors.length) fail(`${name}: ${r.errors.join('; ')}`);
     if (r.figures !== r.svgFigures) fail(`${name}: a figure is not an <svg>`);
   }
+  // A notebook a visitor opens runs with no bridge to the page's JavaScript.
+  await page.evaluate(() => (document.body.dataset.state = 'switching'));
+  await page.setInputFiles('#open', {
+    name: 'probe.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# probe\n\n```ruby\n[defined?(JS).inspect, (File.read("/etc/passwd") rescue $!.class.name)]\n```\n'),
+  });
+  await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
+  const probe = await page.$eval('#notebook .cell .output', (e) => e.textContent).catch(() => '');
+  console.log('probe:', probe);
+  if (!/^\["nil", "Errno::/.test(probe)) fail('a Ruby cell reaches the page or the files: ' + probe);
 } finally {
   await browser.close();
   if (server) server.close();

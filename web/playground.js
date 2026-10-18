@@ -243,16 +243,20 @@
     if (r.error) el.out.append(pre(r.error, 'error'));
   }
 
-  // svgNode parses a figure, without scripts or event handlers, so that a
-  // label cannot run code in the page.
+  // svgNode parses a figure, without scripts, event handlers, animations or
+  // links to code, so that nothing a cell shows can run code in the page: a
+  // cell's figure is data, even when the notebook came from someone else.
+  // A URL scheme is read as a browser reads it, without the tabs, newlines
+  // and other control characters it ignores ("java\tscript:" is javascript:).
   function svgNode(text) {
     const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
     const svg = doc.documentElement;
     if (!svg || svg.nodeName !== 'svg') return null;
-    for (const n of svg.querySelectorAll('script, foreignObject')) n.remove();
+    for (const n of svg.querySelectorAll('script, foreignObject, iframe, embed, object, set, animate, animateMotion, animateTransform, handler, listener')) n.remove();
     for (const n of [svg, ...svg.querySelectorAll('*')]) {
       for (const a of [...n.attributes]) {
-        if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) n.removeAttribute(a.name);
+        const value = a.value.replace(/[\u0000-\u0020\u007f]/g, '');
+        if (/^on/i.test(a.name) || /^(javascript|vbscript|data):/i.test(value) && !/^data:image\/(png|jpeg|gif);/i.test(value)) n.removeAttribute(a.name);
       }
     }
     if (!svg.getAttribute('viewBox') && svg.getAttribute('width') && svg.getAttribute('height')) {
@@ -260,6 +264,10 @@
     }
     return document.importNode(svg, true);
   }
+  window.playgroundSanitize = (text) => {
+    const n = svgNode(text);
+    return n ? n.outerHTML : null;
+  }; // for web/test/page.mjs
 
   function pre(text, cls) {
     const p = document.createElement('pre');
