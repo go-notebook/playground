@@ -34,7 +34,7 @@ func TestRubyCells(t *testing.T) {
 func TestRubyErrors(t *testing.T) {
 	for src, want := range map[string]string{
 		"```ruby\nx = (\n```\n":                 "line 2:",
-		"```ruby\na = 1\nb = a / 0\n```\n":     "line 2: divided by 0 (ZeroDivisionError)",
+		"```ruby\na = 1\nb = a / 0\n```\n":      "line 2: divided by 0 (ZeroDivisionError)",
 		"```ruby\ndef f = raise('x')\nf\n```\n": "line 1: x (RuntimeError)\n\tat line 1, in Object#f\n\tat line 2",
 		// A Ruby local named as a Go variable already is.
 		// A local whose value is nil, of a type of another package, of no
