@@ -139,6 +139,14 @@ func build(c config) error {
 		"build", "-trimpath", "-ldflags=-s -w", "-o", wasm, corePkg); err != nil {
 		return fmt.Errorf("building the WebAssembly core: %w", err)
 	}
+	// The core with Ruby cells, which the page loads only for a notebook
+	// that has one: rbgo's core build (the language and its numeric stack)
+	// and the go-scikit bindings, on top of everything the Go core has.
+	rubyWasm := filepath.Join(c.out, "playground-ruby.wasm")
+	if _, err := goCmd([]string{"GOOS=js", "GOARCH=wasm", "GOWORK=off"},
+		"build", "-trimpath", "-tags=ruby,rbgo_core", "-ldflags=-s -w", "-o", rubyWasm, corePkg); err != nil {
+		return fmt.Errorf("building the Ruby WebAssembly core: %w", err)
+	}
 	root, err := goCmd(nil, "env", "GOROOT")
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
@@ -180,7 +188,12 @@ func build(c config) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB\n", c.out, len(exs), float64(st.Size())/1e6)
+	rst, err := os.Stat(rubyWasm)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
+		c.out, len(exs), float64(st.Size())/1e6, float64(rst.Size())/1e6)
 	return nil
 }
 

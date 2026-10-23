@@ -1,0 +1,15 @@
+== cell 0 (line 8)
+-- output
+x = array([0.99999658, 0.99999299]), 31 iterations, 171 evaluations
+-- show
+1.446101187309308e-11
+== cell 1 (line 18)
+-- output
+root 2.094551481542327, ∫exp(-x²) = 0.8862269254527579 (√π/2 = 0.8862269254527579)
+-- show
+array([  1.,   1.,   2.,   6.,  24., 120.])
+== cell 2 (line 27)
+-- figure: <svg> 432pt x 230.4pt
+== cell 3 (line 39)
+-- output
+200 points, x(20) = 0.0358

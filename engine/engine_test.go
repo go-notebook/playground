@@ -239,8 +239,8 @@ func TestFailureSkipsTheRest(t *testing.T) {
 }
 
 func TestCells(t *testing.T) {
-	got := Cells("# T\n\n```go\nx := 1\n```\nend\n")
-	want := []Cell{{"prose", "# T\n\n"}, {"code", "x := 1\n"}, {"prose", "end\n"}}
+	got := Cells("# T\n\n```go\nx := 1\n```\n```ruby\ny = 2\n```\nend\n")
+	want := []Cell{{"prose", "", "# T\n\n"}, {"code", "go", "x := 1\n"}, {"code", "ruby", "y = 2\n"}, {"prose", "", "end\n"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}

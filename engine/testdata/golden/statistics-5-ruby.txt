@@ -1,0 +1,12 @@
+== cell 0 (line 8)
+== cell 1 (line 18)
+-- output
+Welch t = -5.3435, p = 8.962e-07
+Mann-Whitney U = 320.0, p = 3.95e-06
+-- show
+#<Stats::TestResult statistic=0.9884508729667941, pvalue=0.95054669081333>
+== cell 2 (line 28)
+-- figure: <svg> 432pt x 230.4pt
+== cell 3 (line 40)
+-- show
+{Low:-1.424190063418329 High:-0.6509202950928105}
