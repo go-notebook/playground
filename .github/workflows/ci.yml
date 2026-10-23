@@ -101,6 +101,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: Fuzz the cell splitter for 60 s
         run: go test -run '^$' -fuzz FuzzSplit -fuzztime 60s ./engine
+      - name: Fuzz the SVG sanitizer for 60 s
+        run: go test -run '^$' -fuzz FuzzSanitizeSVG -fuzztime 60s ./engine
 
   arch-native:
     name: arch arm64

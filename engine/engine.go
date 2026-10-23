@@ -365,6 +365,16 @@ func Bundle(v any) map[string]string {
 	if _, ok := b["text/plain"]; !ok {
 		b["text/plain"] = fmt.Sprintf("<%T>", v)
 	}
+	// A figure reaches the page only as SanitizeSVG writes it back.
+	if svg, ok := b["image/svg+xml"]; ok {
+		clean, err := SanitizeSVG(svg)
+		if err != nil {
+			delete(b, "image/svg+xml")
+			b["text/plain"] = fmt.Sprintf("<%T: %v>", v, err)
+		} else {
+			b["image/svg+xml"] = clean
+		}
+	}
 	return b
 }
 

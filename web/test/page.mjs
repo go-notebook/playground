@@ -75,11 +75,20 @@ try {
     '<svg xmlns="http://www.w3.org/2000/svg"><animate attributeName="onclick" values="alert(1)"/></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><iframe src="x"/></foreignObject></svg>',
     '<svg xmlns="http://www.w3.org/2000/svg"><a href=" data:text/html,x"><text>x</text></a></svg>',
+    // External references and style sheets: nothing a figure holds may fetch.
+    '<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(https://evil.example/x.css)</style></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/t.png"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><use xlink:href="https://evil.example/s.svg#x"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(https://evil.example/p#p)" style="filter:url(https://evil.example/f)"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg"><foreignobject><img xmlns="http://www.w3.org/1999/xhtml" src="https://evil.example/i"/></foreignobject></svg>',
   ];
   for (const h of hostile) {
     const out = await page.evaluate((t) => window.playgroundSanitize(t), h);
-    if (/script|onload|onclick|<set|<animate|foreignObject|iframe|data:text/i.test(out || '')) fail('the sanitizer let through: ' + out);
+    if (/script|onload|onclick|<set|<animate|foreignObject|iframe|data:text|evil|<style|<use/i.test(out || '')) fail('the sanitizer let through: ' + out);
   }
+  const internal = await page.evaluate(() =>
+    window.playgroundSanitize('<svg xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#c)"><rect/></g></svg>'));
+  if (!/clip-path="url\(#c\)"/.test(internal || '')) fail('the sanitizer dropped a reference inside the figure: ' + internal);
   const kept = await page.evaluate(() =>
     window.playgroundSanitize('<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AA=="/></svg>'));
   if (!/data:image\/png/.test(kept || '')) fail('the sanitizer dropped an embedded PNG: ' + kept);

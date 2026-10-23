@@ -91,7 +91,7 @@ func TestBuild(t *testing.T) {
 	if bytes.Contains(page, []byte("</script><")) && bytes.Count(page, []byte("</script>")) != 2 {
 		t.Error("a notebook closed a <script> early")
 	}
-	if !strings.Contains(log.String(), "4 notebooks, playground.wasm") {
+	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
 		t.Errorf("log: %s", log)
 	}
 }

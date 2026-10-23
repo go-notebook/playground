@@ -243,20 +243,36 @@
     if (r.error) el.out.append(pre(r.error, 'error'));
   }
 
-  // svgNode parses a figure, without scripts, event handlers, animations or
-  // links to code, so that nothing a cell shows can run code in the page: a
-  // cell's figure is data, even when the notebook came from someone else.
+  // svgNode parses a figure, without scripts, event handlers, animations,
+  // style sheets or references outside the document, so that nothing a cell
+  // shows can run code in the page or fetch anything: a cell's figure is
+  // data, even when the notebook came from someone else. The engine has
+  // already rewritten it through an allowlist (engine.SanitizeSVG, fuzzed);
+  // this is the second layer, on the DOM the page will insert.
   // A URL scheme is read as a browser reads it, without the tabs, newlines
   // and other control characters it ignores ("java\tscript:" is javascript:).
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svgDropped = new Set(['script', 'style', 'foreignobject', 'iframe', 'embed', 'object', 'use', 'set', 'animate',
+    'animatemotion', 'animatetransform', 'animatecolor', 'discard', 'handler', 'listener', 'feimage']);
   function svgNode(text) {
     const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
     const svg = doc.documentElement;
-    if (!svg || svg.nodeName !== 'svg') return null;
-    for (const n of svg.querySelectorAll('script, foreignObject, iframe, embed, object, set, animate, animateMotion, animateTransform, handler, listener')) n.remove();
+    if (!svg || svg.namespaceURI !== SVG_NS || svg.localName !== 'svg' || doc.querySelector('parsererror')) return null;
+    for (const n of [...svg.querySelectorAll('*')]) {
+      if (n.namespaceURI !== SVG_NS || svgDropped.has(n.localName.toLowerCase())) n.remove();
+    }
     for (const n of [svg, ...svg.querySelectorAll('*')]) {
       for (const a of [...n.attributes]) {
         const value = a.value.replace(/[\u0000-\u0020\u007f]/g, '');
-        if (/^on/i.test(a.name) || /^(javascript|vbscript|data):/i.test(value) && !/^data:image\/(png|jpeg|gif);/i.test(value)) n.removeAttribute(a.name);
+        const raster = n.localName === 'image' && /^data:image\/(png|jpeg|gif);/i.test(value);
+        const ref = a.localName === 'href' || a.localName === 'src';
+        if (
+          /^on/i.test(a.localName) ||
+          (ref && !value.startsWith('#') && !raster) ||
+          (/^(javascript|vbscript|data):/i.test(value) && !raster) ||
+          /url\((?!['"]?#)|\\|image-set|@import/i.test(value)
+        )
+          n.removeAttribute(a.name);
       }
     }
     if (!svg.getAttribute('viewBox') && svg.getAttribute('width') && svg.getAttribute('height')) {
