@@ -1,10 +1,10 @@
 module github.com/go-notebook/playground
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/go-ndarray/ndarray v0.12.0
-	github.com/go-notebook/notebook v0.3.0
+	github.com/go-notebook/notebook v0.4.0
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.2.0
 	github.com/go-numerics/special v0.1.0
@@ -117,9 +117,9 @@ require (
 	github.com/go-opentype/shape v0.5.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
-	github.com/go-regexp/engine v0.3.0 // indirect
+	github.com/go-regexp/engine v0.3.2 // indirect
 	github.com/go-richdoc/richdoc v0.4.0 // indirect
-	github.com/go-rouge/rouge v0.4.0 // indirect
+	github.com/go-rouge/rouge v0.7.0 // indirect
 	github.com/go-ruby-aasm/aasm v0.0.0-20260717061120-cec0976ec205 // indirect
 	github.com/go-ruby-abbrev/abbrev v0.0.0-20260916090008-ac08b8471830 // indirect
 	github.com/go-ruby-acme/acme v0.0.0-20260910083506-2c4b2786f606 // indirect
@@ -252,7 +252,7 @@ require (
 	github.com/go-ruby-ransack/ransack v0.0.0-20260717072959-06ca1d7c6829 // indirect
 	github.com/go-ruby-rdoc/rdoc v0.0.0-20260916101528-7ed1d61f5088 // indirect
 	github.com/go-ruby-redis/redis v0.0.0-20260916101628-3b91d134e9dc // indirect
-	github.com/go-ruby-regexp/regexp v0.1.0 // indirect
+	github.com/go-ruby-regexp/regexp v0.1.1 // indirect
 	github.com/go-ruby-reline/reline v0.0.0-20260916101734-37c7d2c11d74 // indirect
 	github.com/go-ruby-resolv/resolv v0.0.0-20260916101809-a2b1b027ae6d // indirect
 	github.com/go-ruby-resque/resque v0.0.0-20260903192756-dc5f8e3f2e80 // indirect
