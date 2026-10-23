@@ -47,6 +47,13 @@ A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.co
   - A Ruby cell's methods and constants stay Ruby's, and so does a local named like a Go builtin (`len`).
 - **Errors** read as for Go cells: `line 2: divided by 0 (ZeroDivisionError)`, then `at line N` for each frame in the cell.
 
+### Figures are data
+
+A notebook can come from anyone (a visitor opens a file), and a cell can show any SVG it likes: a Go type's `SaveSVG` or a Ruby cell writes whatever text it wants. So a figure reaches the page through two sanitizers:
+
+- [`engine.SanitizeSVG`](engine/svg.go) rewrites it through an allowlist of SVG elements, attributes and style properties. It drops scripts and style sheets, event handlers, animation, foreign objects, and every reference outside the document: an `href` that is not a `#fragment` or an embedded PNG/JPEG/GIF, and a `url()` that is not `url(#…)`. A figure that is not well-formed XML, over 32 MiB or nested over 256 deep is shown as text. Each hostile class has a regression test, and `FuzzSanitizeSVG` (run in CI) checks that the output always parses, holds only the allowlist and comes back unchanged when sanitized again.
+- The page checks the parsed DOM again before inserting it.
+
 ### Deploying it on a site
 
 A site keeps its notebooks and a small Go module that pins the playground:
