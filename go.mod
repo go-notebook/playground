@@ -11,6 +11,8 @@ require (
 	github.com/go-plot/plot v0.1.1
 	github.com/go-scikit/ruby v0.1.0
 	github.com/go-statistics/stats v0.1.0
+	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/traefik/yaegi v0.16.1
 )
 
@@ -340,6 +342,7 @@ require (
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
 	github.com/hashicorp/vault/api v1.23.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect

@@ -9,6 +9,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // examples are this repository's statistics notebooks.
@@ -47,12 +50,22 @@ func fakeRoot(t *testing.T) string {
 	return root
 }
 
+// quiet returns a buffer for both streams of a run, and puts the go command's
+// error stream back afterwards.
 func quiet(t *testing.T) *bytes.Buffer {
-	var b bytes.Buffer
-	o, e := stdout, stderr
-	stdout, stderr = &b, &b
-	t.Cleanup(func() { stdout, stderr = o, e })
-	return &b
+	o := goStderr
+	t.Cleanup(func() { goStderr = o })
+	return &bytes.Buffer{}
+}
+
+// runTo runs the command with both streams in b.
+func runTo(b *bytes.Buffer, args ...string) error { return run(args, b, b) }
+
+// seam replaces *p for the test.
+func seam[T any](t *testing.T, p *T, v T) {
+	o := *p
+	*p = v
+	t.Cleanup(func() { *p = o })
 }
 
 // TestBuild builds a real playground: the WebAssembly core from source, and
@@ -63,8 +76,8 @@ func TestBuild(t *testing.T) {
 	}
 	log := quiet(t)
 	out := filepath.Join(t.TempDir(), "playground")
-	args := append([]string{"-o", out, "-org", "go-statistics", "-home", "https://go-statistics.github.io/", "-accent", "#9e520f"}, examples(t)...)
-	if err := run(args); err != nil {
+	args := append([]string{"-o", out, "--org", "go-statistics", "--home", "https://go-statistics.github.io/", "--accent", "#9e520f"}, examples(t)...)
+	if err := runTo(log, args...); err != nil {
 		t.Fatalf("%v\n%s", err, log)
 	}
 	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "notebooks/1-fit-and-test.md"} {
@@ -97,19 +110,27 @@ func TestBuild(t *testing.T) {
 }
 
 func TestRunErrors(t *testing.T) {
-	quiet(t)
+	log := quiet(t)
 	for _, tc := range []struct {
 		args []string
 		err  string
 	}{
-		{[]string{"-nope"}, "flag provided but not defined: -nope"},
+		{[]string{"--nope"}, "unknown flag: --nope"},
+		{[]string{"-n", "x.md"}, "unknown shorthand flag: 'n'"},
 		{nil, "no notebooks"},
-		{[]string{"-accent", "red", "x.md"}, `"red" is not a #rgb or #rrggbb colour`},
-		{[]string{"-accent-dark", "#12345", "x.md"}, `"#12345" is not`},
+		{[]string{"--accent", "red", "x.md"}, `"red" is not a #rgb or #rrggbb colour`},
+		{[]string{"--accent-dark", "#12345", "x.md"}, `"#12345" is not`},
+		{[]string{"--accent"}, "flag needs an argument: --accent"},
 		{[]string{"-o", t.TempDir(), "does-not-exist.md"}, "does-not-exist.md"},
+		{[]string{"-o"}, "flag needs an argument: 'o'"},
 	} {
-		if err := run(tc.args); err == nil || !strings.Contains(err.Error(), tc.err) {
+		log.Reset()
+		err := runTo(log, tc.args...)
+		if err == nil || !strings.Contains(err.Error(), tc.err) {
 			t.Errorf("run(%q) = %v, want %q", tc.args, err, tc.err)
+		}
+		if strings.Contains(log.String(), "Usage:") {
+			t.Errorf("run(%q): usage printed on an error", tc.args)
 		}
 	}
 }
@@ -120,7 +141,7 @@ func TestFailingNotebook(t *testing.T) {
 	if err := os.WriteFile(nb, []byte("```go\nx := 1\n```\n```go\nundefinedName\n```\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := run([]string{"-o", t.TempDir(), nb})
+	err := runTo(log, "-o", t.TempDir(), nb)
 	if err == nil || !strings.Contains(err.Error(), "bad.md does not run") {
 		t.Errorf("err = %v", err)
 	}
@@ -130,7 +151,7 @@ func TestFailingNotebook(t *testing.T) {
 }
 
 func TestWriteErrors(t *testing.T) {
-	quiet(t)
+	log := quiet(t)
 	defer func(f func([]string, ...string) ([]byte, error)) { goCmd = f }(goCmd)
 	root := fakeRoot(t)
 	nb := examples(t)[1] // 2-t-test: no figure, quick
@@ -178,7 +199,7 @@ func TestWriteErrors(t *testing.T) {
 		if tc.gocmd != nil {
 			goCmd = tc.gocmd
 		}
-		err := run([]string{"-o", out, nb})
+		err := runTo(log, "-o", out, nb)
 		if tc.err == "" && err != nil || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {
 			t.Errorf("blocking %q: err = %v, want %q", tc.block, err, tc.err)
 		}
@@ -190,29 +211,232 @@ func TestWriteErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	goCmd = fakeGo(root)
-	if err := run([]string{"-o", filepath.Join(file, "out"), nb}); err == nil {
+	if err := runTo(log, "-o", filepath.Join(file, "out"), nb); err == nil {
 		t.Error("an output under a file did not fail")
 	}
 }
 
+// main reports an error on the real standard error and exits 1 through
+// osExit; a good build exits nowhere.
 func TestMainExit(t *testing.T) {
-	log := quiet(t)
-	defer func(f func(int)) { exit = f }(exit)
-	defer func(a []string) { os.Args = a }(os.Args)
-	code := -1
-	exit = func(c int) { code = c }
-	os.Args = []string{"build"}
-	main()
-	if code != 1 || !strings.Contains(log.String(), "build: no notebooks") {
-		t.Errorf("exit %d, log %q", code, log)
+	quiet(t)
+	// Standard error is a file for the length of the call.
+	errFile, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer func(f func([]string, ...string) ([]byte, error)) { goCmd = f }(goCmd)
-	goCmd = fakeGo(fakeRoot(t))
+	defer errFile.Close()
+	oe := os.Stderr
+	os.Stderr = errFile
+	defer func() { os.Stderr = oe }()
+	seam(t, &os.Args, []string{"build"})
+	code := -1
+	seam(t, &osExit, func(c int) { code = c })
+	main()
+	got, _ := os.ReadFile(errFile.Name())
+	if code != 1 || !strings.Contains(string(got), "build: no notebooks") {
+		t.Errorf("exit %d, stderr %q", code, got)
+	}
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	code = -1
 	os.Args = []string{"build", "-o", t.TempDir(), examples(t)[1]}
 	main()
 	if code != -1 {
-		t.Errorf("a good build exited %d: %s", code, log)
+		t.Errorf("a good build exited %d", code)
+	}
+}
+
+// The exit status goes through osExit for every failure, not only a missing
+// notebook list.
+func TestExitStatuses(t *testing.T) {
+	quiet(t)
+	oe := os.Stderr
+	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devnull.Close()
+	os.Stderr = devnull
+	defer func() { os.Stderr = oe }()
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
+	for _, tc := range []struct {
+		args []string
+		want int
+	}{
+		{[]string{"--nope"}, 1},
+		{[]string{"--accent", "red", "x.md"}, 1},
+		{[]string{"-o", t.TempDir(), "missing.md"}, 1},
+		{[]string{"--help"}, -1},
+		{[]string{"--version"}, -1},
+		{[]string{"-o", t.TempDir(), examples(t)[1]}, -1},
+	} {
+		code := -1
+		seam(t, &osExit, func(c int) { code = c })
+		seam(t, &os.Args, append([]string{"build"}, tc.args...))
+		devOut, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+		oo := os.Stdout
+		os.Stdout = devOut
+		main()
+		os.Stdout = oo
+		devOut.Close()
+		if code != tc.want {
+			t.Errorf("%q: exit %d, want %d", tc.args, code, tc.want)
+		}
+	}
+}
+
+func TestHelp(t *testing.T) {
+	var out bytes.Buffer
+	if err := runTo(&out, "--help"); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{
+		"build [flags] notebook.md...",
+		"-o, --out string",
+		"--org string",
+		"--home string",
+		"--accent string",
+		"--accent-dark string",
+		"--libraries string",
+		"--version",
+		"--org go-statistics",
+	} {
+		if !strings.Contains(out.String(), s) {
+			t.Errorf("build --help lacks %q:\n%s", s, out.String())
+		}
+	}
+	out.Reset()
+	if err := runTo(&out, "-h"); err != nil || !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("-h: %v\n%s", err, out.String())
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	seam(t, &buildInfo, func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{GoVersion: "go1.27.2", Main: debug.Module{Path: "github.com/go-notebook/playground", Version: "v0.2.1"}}, true
+	})
+	var out bytes.Buffer
+	if err := runTo(&out, "--version"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "build version go-notebook/playground v0.2.1, go1.27.2\n"; out.String() != want {
+		t.Errorf("--version = %q, want %q", out.String(), want)
+	}
+}
+
+// legacy rewrites the single-dash long flags of earlier releases and nothing
+// else: every case names the arguments, what pflag must receive, and the
+// note on stderr ("" for none).
+func TestLegacy(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		args, want []string
+		note       string
+	}{
+		{"long flag", []string{"-org", "x", "a.md"},
+			[]string{"--org", "x", "a.md"}, "read -org as --org"},
+		{"long flag with =", []string{"-accent=#fff", "a.md"},
+			[]string{"--accent=#fff", "a.md"}, "read -accent as --accent"},
+		{"hyphenated name", []string{"-accent-dark", "#000", "a.md"},
+			[]string{"--accent-dark", "#000", "a.md"}, "read -accent-dark as --accent-dark"},
+		{"several, one note", []string{"-o", "out", "-org", "x", "-home=h", "-libraries", "l", "a.md"},
+			[]string{"-o", "out", "--org", "x", "--home=h", "--libraries", "l", "a.md"},
+			"read -org, -home, -libraries as --org, --home, --libraries"},
+		{"a value is not a flag", []string{"-o", "-org", "a.md"},
+			[]string{"-o", "-org", "a.md"}, ""},
+		{"a value after a long flag is not a flag", []string{"--home", "-org", "a.md"},
+			[]string{"--home", "-org", "a.md"}, ""},
+		{"a value after a rewritten flag is not a flag", []string{"-home", "-org", "a.md"},
+			[]string{"--home", "-org", "a.md"}, "read -home as --home"},
+		{"inline value: the next word is an argument", []string{"--home=h", "-org", "x", "a.md"},
+			[]string{"--home=h", "--org", "x", "a.md"}, "read -org as --org"},
+		{"shorthand with an attached value", []string{"-oout", "-org", "x", "a.md"},
+			[]string{"-oout", "--org", "x", "a.md"}, "read -org as --org"},
+		{"unknown flag left to pflag", []string{"-nope", "a.md"},
+			[]string{"-nope", "a.md"}, ""},
+		{"after --", []string{"-org", "x", "--", "-org"},
+			[]string{"--org", "x", "--", "-org"}, "read -org as --org"},
+		{"a lone dash", []string{"-", "-org", "x"},
+			[]string{"-", "--org", "x"}, "read -org as --org"},
+		{"trailing flag without its value", []string{"a.md", "-org"},
+			[]string{"a.md", "--org"}, "read -org as --org"},
+		{"help", []string{"-help"}, []string{"--help"}, "read -help as --help"},
+		{"version", []string{"-version"}, []string{"--version"}, "read -version as --version"},
+		{"nothing", nil, []string{}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var warn bytes.Buffer
+			got := legacy(RootCmd(), c.args, &warn)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("legacy(%q) = %q, want %q", c.args, got, c.want)
+			}
+			if c.note == "" && warn.Len() != 0 {
+				t.Errorf("unexpected note: %q", warn.String())
+			}
+			if c.note != "" && !strings.Contains(warn.String(), c.note) {
+				t.Errorf("note %q, want %q", warn.String(), c.note)
+			}
+		})
+	}
+}
+
+// Find fails when the command takes no positional arguments at all and is
+// given one: the arguments go through untouched and cobra reports it.
+func TestLegacyFindError(t *testing.T) {
+	root := RootCmd()
+	root.Args = nil
+	root.AddCommand(&cobra.Command{Use: "sub", Run: func(*cobra.Command, []string) {}})
+	args := []string{"dance", "-org"}
+	if got := legacy(root, args, &bytes.Buffer{}); !slices.Equal(got, args) {
+		t.Errorf("got %q", got)
+	}
+}
+
+// The old spellings still build, with a note.
+func TestLegacyEndToEnd(t *testing.T) {
+	log := quiet(t)
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
+	out := t.TempDir()
+	if err := runTo(log, "-o", out, "-org", "legacy-org", "-accent", "#123", "-accent-dark=#456", examples(t)[1]); err != nil {
+		t.Fatalf("%v\n%s", err, log)
+	}
+	page, _ := os.ReadFile(filepath.Join(out, "index.html"))
+	if !bytes.Contains(page, []byte("<title>legacy-org playground</title>")) || !bytes.Contains(page, []byte("--accent: #123;")) {
+		t.Error("the single-dash flags were not applied")
+	}
+	if !strings.Contains(log.String(), "read -org, -accent, -accent-dark as --org, --accent, --accent-dark") {
+		t.Errorf("no note: %s", log)
+	}
+}
+
+// No long flag is spelled only with registered shorthand letters: if one
+// were, -name would mean a cluster of shorthands to pflag and the long flag
+// to earlier releases, and the rewrite would silently pick one.
+func TestNoLongFlagIsACluster(t *testing.T) {
+	cmd := RootCmd()
+	cmd.InitDefaultHelpFlag()
+	cmd.InitDefaultVersionFlag()
+	flags := cmd.Flags()
+	flags.VisitAll(func(f *pflag.Flag) {
+		cluster := true
+		for _, r := range f.Name {
+			if flags.ShorthandLookup(string(r)) == nil {
+				cluster = false
+			}
+		}
+		if cluster {
+			t.Errorf("--%s is also a cluster of shorthands", f.Name)
+		}
+	})
+}
+
+// The command takes exactly these flags, with POSIX long and short spellings.
+func TestFlags(t *testing.T) {
+	want := []string{"accent/", "accent-dark/", "home/", "libraries/", "org/", "out/o"}
+	var got []string
+	RootCmd().Flags().VisitAll(func(f *pflag.Flag) { got = append(got, f.Name+"/"+f.Shorthand) })
+	if !slices.Equal(got, want) {
+		t.Errorf("flags %q, want %q", got, want)
 	}
 }
 
