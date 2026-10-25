@@ -3,8 +3,8 @@
 // example notebooks.
 //
 //	go run github.com/go-notebook/playground/cmd/build -o public/playground \
-//	    -org go-statistics -home https://go-statistics.github.io/ \
-//	    -accent '#9e520f' -accent-dark '#f2b36b' notebooks/*.md
+//	    --org go-statistics --home https://go-statistics.github.io/ \
+//	    --accent '#9e520f' --accent-dark '#f2b36b' notebooks/*.md
 //
 // It runs from a Go module that requires github.com/go-notebook/playground,
 // so that the version it builds is the one go.mod pins. Before writing
@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"html"
 	"io"
@@ -30,6 +29,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/spf13/cobra"
+
 	"github.com/go-notebook/playground/engine"
 	"github.com/go-notebook/playground/web"
 )
@@ -37,58 +38,144 @@ import (
 // corePkg is the package of the WebAssembly core.
 const corePkg = "github.com/go-notebook/playground/cmd/playground"
 
-// config is what the flags say.
+// config is what the flags say, and where the command writes.
 type config struct {
 	out, org, home, accent, accentDark, libraries string
 	notebooks                                     []string
+	stdout, stderr                                io.Writer
 }
 
 // Seams for the tests.
 var (
-	stdout io.Writer = os.Stdout
-	stderr io.Writer = os.Stderr
-	exit             = os.Exit
+	// osExit is os.Exit, replaced by tests.
+	osExit = os.Exit
+	// goStderr is where the go command's own messages go: the command's
+	// error stream, set by each run.
+	goStderr io.Writer = os.Stderr
 	// goCmd runs the go command with extra environment, and returns its
 	// standard output.
 	goCmd = func(env []string, args ...string) ([]byte, error) {
 		cmd := exec.Command("go", args...)
 		cmd.Env = append(os.Environ(), env...)
-		cmd.Stderr = stderr
+		cmd.Stderr = goStderr
 		return cmd.Output()
 	}
 	buildInfo = debug.ReadBuildInfo
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(stderr, "build:", err)
-		exit(1)
+	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintln(os.Stderr, "build:", err)
+		osExit(1)
 	}
 }
 
-func run(args []string) error {
+// run is the command, on explicit streams: the arguments are read with the
+// single-dash long flags of earlier releases rewritten, then executed.
+func run(args []string, stdout, stderr io.Writer) error {
+	root := RootCmd()
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	root.SetArgs(legacy(root, args, stderr))
+	return root.Execute()
+}
+
+// RootCmd returns the build command.
+func RootCmd() *cobra.Command {
 	var c config
-	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.StringVar(&c.out, "o", "playground", "output `directory`")
-	fs.StringVar(&c.org, "org", "go-notebook", "the organisation the page belongs to, for its title and its home link")
-	fs.StringVar(&c.home, "home", "../", "the `URL` the home link points to")
-	fs.StringVar(&c.accent, "accent", "#047857", "accent `colour` on a light background")
-	fs.StringVar(&c.accentDark, "accent-dark", "#6ee7b7", "accent `colour` on a dark background")
-	fs.StringVar(&c.libraries, "libraries", "go-statistics, go-numerics, go-ndarray and go-plot", "the libraries the footer names")
-	if err := fs.Parse(args); err != nil {
-		return err
+	cmd := &cobra.Command{
+		Use:   "build [flags] notebook.md...",
+		Short: "Write a deployable playground from a set of example notebooks",
+		Long: `build writes a deployable playground: a directory holding the page, the
+WebAssembly cores built from source, Go's wasm_exec.js and the example
+notebooks. It first runs every notebook natively, and fails if a cell fails.`,
+		Example: `  go run github.com/go-notebook/playground/cmd/build -o public/playground \
+      --org go-statistics --home https://go-statistics.github.io/ \
+      --accent '#9e520f' --accent-dark '#f2b36b' notebooks/*.md`,
+		Version:       version(),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return errors.New("no notebooks: give the example notebooks as arguments")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c.notebooks = args
+			for _, col := range []string{c.accent, c.accentDark} {
+				if !colour.MatchString(col) {
+					return fmt.Errorf("%q is not a #rgb or #rrggbb colour", col)
+				}
+			}
+			c.stdout, c.stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+			goStderr = c.stderr
+			return build(c)
+		},
 	}
-	c.notebooks = fs.Args()
-	if len(c.notebooks) == 0 {
-		return errors.New("no notebooks: give the example notebooks as arguments")
+	f := cmd.Flags()
+	f.StringVarP(&c.out, "out", "o", "playground", "output directory")
+	f.StringVar(&c.org, "org", "go-notebook", "the organisation the page belongs to, for its title and its home link")
+	f.StringVar(&c.home, "home", "../", "the URL the home link points to")
+	f.StringVar(&c.accent, "accent", "#047857", "accent colour on a light background")
+	f.StringVar(&c.accentDark, "accent-dark", "#6ee7b7", "accent colour on a dark background")
+	f.StringVar(&c.libraries, "libraries", "go-statistics, go-numerics, go-ndarray and go-plot", "the libraries the footer names")
+	return cmd
+}
+
+// legacy rewrites the single-dash long flags earlier releases accepted
+// (-org x, -accent-dark=#fff), read by the standard flag package, into the
+// double-dash spelling pflag requires, and says so once on warn. pflag reads
+// one dash as one letter: left alone, -org would be -o with the value "rg".
+//
+// Only a name the command registers is rewritten; anything else is left for
+// pflag to report in its own words. The value of a flag that takes one is
+// copied as it is, even when it starts with a dash, and so is everything
+// after a bare "--". No long name is made only of registered shorthand
+// letters (a test holds that), so a rewrite never changes what a cluster
+// would have meant.
+func legacy(root *cobra.Command, args []string, warn io.Writer) []string {
+	cmd, _, err := root.Find(args)
+	if err != nil {
+		return args // cobra says why
 	}
-	for _, col := range []string{c.accent, c.accentDark} {
-		if !colour.MatchString(col) {
-			return fmt.Errorf("%q is not a #rgb or #rrggbb colour", col)
+	cmd.InitDefaultHelpFlag()
+	cmd.InitDefaultVersionFlag()
+	flags := cmd.Flags()
+	out := make([]string, 0, len(args))
+	var rewritten []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
+		if len(arg) < 2 || arg[0] != '-' {
+			out = append(out, arg)
+			continue
+		}
+		body, double := strings.CutPrefix(arg[1:], "-")
+		name, _, inline := strings.Cut(body, "=")
+		f := flags.Lookup(name)
+		switch {
+		case double:
+		case len(name) == 1:
+			f = flags.ShorthandLookup(name)
+		case f != nil:
+			arg = "-" + arg
+			rewritten = append(rewritten, name)
+		}
+		out = append(out, arg)
+		if f != nil && !inline && f.NoOptDefVal == "" && i+1 < len(args) {
+			i++
+			out = append(out, args[i])
 		}
 	}
-	return build(c)
+	if len(rewritten) > 0 {
+		fmt.Fprintf(warn, "build: read -%s as --%s; flags take two dashes now\n",
+			strings.Join(rewritten, ", -"), strings.Join(rewritten, ", --"))
+	}
+	return out
 }
 
 var colour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
@@ -112,7 +199,7 @@ func build(c config) error {
 		failed := false
 		for _, r := range engine.Run(string(src)) {
 			if r.Error != "" {
-				fmt.Fprintf(stderr, "%s:%d: cell %d failed:\n%s\n", path, r.Line, r.Cell, r.Error)
+				fmt.Fprintf(c.stderr, "%s:%d: cell %d failed:\n%s\n", path, r.Line, r.Cell, r.Error)
 				failed = true
 			}
 		}
@@ -192,7 +279,7 @@ func build(c config) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
+	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
 		c.out, len(exs), float64(st.Size())/1e6, float64(rst.Size())/1e6)
 	return nil
 }

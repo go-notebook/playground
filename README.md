@@ -69,9 +69,11 @@ and its deploy workflow builds the page into the site, from that pinned version:
 
 ```sh
 cd playground && go run github.com/go-notebook/playground/cmd/build \
-    -o ../public/playground -org go-statistics -home https://go-statistics.github.io/ \
-    -accent '#9e520f' -accent-dark '#f2b36b' notebooks/*.md
+    -o ../public/playground --org go-statistics --home https://go-statistics.github.io/ \
+    --accent '#9e520f' --accent-dark '#f2b36b' notebooks/*.md
 ```
+
+The flags are POSIX: `-o`/`--out`, `--org`, `--home`, `--accent`, `--accent-dark`, `--libraries`, plus `-h`/`--help` and `--version`. The single-dash long spelling of earlier releases (`-org x`) is still read, with a note on stderr, so existing workflows keep working.
 
 The WebAssembly is never committed: every deploy builds it from the version `go.mod` and `go.sum` pin.
 
