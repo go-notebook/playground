@@ -13,24 +13,28 @@
 
   // Timings, in milliseconds since the page started loading
   // (performance.now()), for the status line and for tests.
-  const timings = (window.playgroundTimings = { runtimeReady: null, firstResult: null });
+  const timings = (window.playgroundTimings = { runtimeReady: null, firstResult: null, rubyReady: null, firstRubyResult: null });
 
   // ---- The worker -------------------------------------------------------
 
   let worker = null;
   let ready = false;
+  // engine is the core the worker runs: 'go', or 'ruby' — the core with
+  // Ruby cells too, much larger, loaded only for a notebook that has one.
+  let engine = 'go';
   let queue = [];
   const pending = new Map();
   let nextId = 1;
 
   function startWorker() {
     ready = false;
-    worker = new Worker('worker.js');
+    worker = new Worker(engine === 'ruby' ? 'worker.js?engine=ruby' : 'worker.js');
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === 'ready') {
         ready = true;
         if (timings.runtimeReady === null) timings.runtimeReady = performance.now();
+        if (engine === 'ruby' && timings.rubyReady === null) timings.rubyReady = performance.now();
         runButton.disabled = false;
         for (const q of queue) worker.postMessage(q);
         queue = [];
@@ -65,6 +69,23 @@
     startWorker();
   }
 
+  // ensureEngine switches to the Ruby core when the cells hold a Ruby cell,
+  // once: a visitor who runs only Go never downloads it. It reports whether
+  // they do.
+  function ensureEngine(cells) {
+    const hasRuby = cells.some((c) => c.kind === 'code' && c.lang === 'ruby');
+    if (hasRuby && engine !== 'ruby') {
+      engine = 'ruby';
+      worker.terminate();
+      for (const p of pending.values()) p.reject(new Error('stopped'));
+      pending.clear();
+      queue = [];
+      startWorker();
+      setStatus('Loading the Ruby runtime…');
+    }
+    return hasRuby;
+  }
+
   // ---- The notebook -----------------------------------------------------
 
   // nb.cells: {kind: "prose" | "code", source}; the DOM of a code cell is
@@ -73,8 +94,10 @@
   const edited = new Map(); // example name -> cells, kept when switching
 
   function load(name, cells, title) {
-    if (nb && nb.example) edited.set(nb.example, nb.cells.map((c) => ({ kind: c.kind, source: c.source })));
+    if (nb && nb.example) edited.set(nb.example, nb.cells.map((c) => ({ kind: c.kind, lang: c.lang, source: c.source })));
     nb = { name, example: examples.some((x) => x.name === name) ? name : null, title, cells };
+    if (worker) ensureEngine(cells);
+    else if (cells.some((c) => c.kind === 'code' && c.lang === 'ruby')) engine = 'ruby';
     render();
     for (const a of $('examples').querySelectorAll('a')) {
       if (a.dataset.name === name) a.setAttribute('aria-current', 'page');
@@ -85,7 +108,7 @@
 
   function loadExample(name) {
     const ex = examples.find((x) => x.name === name) || examples[0];
-    const cells = edited.get(ex.name) || ex.cells.map((c) => ({ kind: c.kind, source: c.source }));
+    const cells = edited.get(ex.name) || ex.cells.map((c) => ({ kind: c.kind, lang: c.lang, source: c.source }));
     load(ex.name, cells, ex.title);
   }
 
@@ -105,7 +128,8 @@
       ta.value = c.source.replace(/\n$/, '');
       ta.spellcheck = false;
       ta.setAttribute('autocapitalize', 'off');
-      ta.setAttribute('aria-label', 'Go cell');
+      ta.setAttribute('aria-label', (c.lang === 'ruby' ? 'Ruby' : 'Go') + ' cell');
+      cell.dataset.lang = c.lang || 'go';
       ta.rows = Math.max(1, ta.value.split('\n').length);
       ta.addEventListener('input', () => {
         c.source = ta.value + '\n';
@@ -141,7 +165,7 @@
         const runs = c.source.match(/`+/g) || [];
         const fence = '`'.repeat(Math.max(3, ...runs.map((r) => r.length + 1)));
         const src = c.source === '' || c.source.endsWith('\n') ? c.source : c.source + '\n';
-        return fence + 'go\n' + src + fence + '\n';
+        return fence + (c.lang || 'go') + '\n' + src + fence + '\n';
       })
       .join('');
   }
@@ -159,11 +183,13 @@
     setStatus(ready ? 'Running…' : 'Waiting for the Go runtime…');
     const code = nb.cells.filter((c) => c.kind === 'code');
     for (const c of code) c.el.cell.classList.add('stale');
+    const hasRuby = ensureEngine(code);
     try {
       const reply = await call('run', compose());
       const results = JSON.parse(reply.json);
       results.forEach((r, i) => code[i] && show(code[i].el, r));
       if (timings.firstResult === null) timings.firstResult = performance.now();
+      if (hasRuby && timings.firstRubyResult === null) timings.firstRubyResult = performance.now();
       const failed = results.find((r) => r.error);
       setStatus(
         (failed ? 'A cell failed. ' : '') +
@@ -217,16 +243,36 @@
     if (r.error) el.out.append(pre(r.error, 'error'));
   }
 
-  // svgNode parses a figure, without scripts or event handlers, so that a
-  // label cannot run code in the page.
+  // svgNode parses a figure, without scripts, event handlers, animations,
+  // style sheets or references outside the document, so that nothing a cell
+  // shows can run code in the page or fetch anything: a cell's figure is
+  // data, even when the notebook came from someone else. The engine has
+  // already rewritten it through an allowlist (engine.SanitizeSVG, fuzzed);
+  // this is the second layer, on the DOM the page will insert.
+  // A URL scheme is read as a browser reads it, without the tabs, newlines
+  // and other control characters it ignores ("java\tscript:" is javascript:).
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svgDropped = new Set(['script', 'style', 'foreignobject', 'iframe', 'embed', 'object', 'use', 'set', 'animate',
+    'animatemotion', 'animatetransform', 'animatecolor', 'discard', 'handler', 'listener', 'feimage']);
   function svgNode(text) {
     const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
     const svg = doc.documentElement;
-    if (!svg || svg.nodeName !== 'svg') return null;
-    for (const n of svg.querySelectorAll('script, foreignObject')) n.remove();
+    if (!svg || svg.namespaceURI !== SVG_NS || svg.localName !== 'svg' || doc.querySelector('parsererror')) return null;
+    for (const n of [...svg.querySelectorAll('*')]) {
+      if (n.namespaceURI !== SVG_NS || svgDropped.has(n.localName.toLowerCase())) n.remove();
+    }
     for (const n of [svg, ...svg.querySelectorAll('*')]) {
       for (const a of [...n.attributes]) {
-        if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) n.removeAttribute(a.name);
+        const value = a.value.replace(/[\u0000-\u0020\u007f]/g, '');
+        const raster = n.localName === 'image' && /^data:image\/(png|jpeg|gif);/i.test(value);
+        const ref = a.localName === 'href' || a.localName === 'src';
+        if (
+          /^on/i.test(a.localName) ||
+          (ref && !value.startsWith('#') && !raster) ||
+          (/^(javascript|vbscript|data):/i.test(value) && !raster) ||
+          /url\((?!['"]?#)|\\|image-set|@import/i.test(value)
+        )
+          n.removeAttribute(a.name);
       }
     }
     if (!svg.getAttribute('viewBox') && svg.getAttribute('width') && svg.getAttribute('height')) {
@@ -234,6 +280,10 @@
     }
     return document.importNode(svg, true);
   }
+  window.playgroundSanitize = (text) => {
+    const n = svgNode(text);
+    return n ? n.outerHTML : null;
+  }; // for web/test/page.mjs
 
   function pre(text, cls) {
     const p = document.createElement('pre');
@@ -376,7 +426,8 @@
     run();
   });
 
-  startWorker();
+  // The first notebook decides which core the worker starts with.
   loadExample(decodeURIComponent(location.hash.slice(1)));
+  startWorker();
   run();
 })();

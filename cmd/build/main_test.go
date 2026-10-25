@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -81,7 +82,7 @@ func TestBuild(t *testing.T) {
 		`<a class="home" href="https://go-statistics.github.io/">← go-statistics</a>`,
 		"--accent: #9e520f;",
 		`"name":"1-fit-and-test","title":"Fit a distribution, then test the fit"`,
-		`"kind":"code","source":"import (`,
+		`"kind":"code","lang":"go","source":"import (`,
 	} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("index.html lacks %s", want)
@@ -90,7 +91,7 @@ func TestBuild(t *testing.T) {
 	if bytes.Contains(page, []byte("</script><")) && bytes.Count(page, []byte("</script>")) != 2 {
 		t.Error("a notebook closed a <script> early")
 	}
-	if !strings.Contains(log.String(), "4 notebooks, playground.wasm") {
+	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
 		t.Errorf("log: %s", log)
 	}
 }
@@ -154,6 +155,18 @@ func TestWriteErrors(t *testing.T) {
 		}, err: "go env GOROOT: no env"},
 		{gocmd: func([]string, ...string) ([]byte, error) { return []byte(t.TempDir()), nil }, err: "wasm_exec.js"},
 		{gocmd: func(_ []string, args ...string) ([]byte, error) { return []byte(root), nil }, err: "playground.wasm"}, // built nothing
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, "-tags=ruby,rbgo_core") {
+				return nil, errors.New("no rbgo")
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "building the Ruby WebAssembly core: no rbgo"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, "-tags=ruby,rbgo_core") {
+				return nil, nil // built nothing
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "playground-ruby.wasm"},
 	} {
 		out := t.TempDir()
 		if tc.block != "" {

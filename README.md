@@ -36,6 +36,24 @@ The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaS
 - **[internal/yaegi](internal/yaegi/)** — yaegi v0.16.1's interpreter with three fixes the playground needs; [its README](internal/yaegi/README.md) lists them.
 - **[cmd/build](cmd/build/)** — writes a deployable directory from a set of notebooks. It first **runs every notebook natively and fails if a cell fails**, then builds the WebAssembly core from source (`GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w"`), copies Go's `wasm_exec.js` and writes the page with the notebooks in it.
 
+### Ruby cells
+
+A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.com/go-notebook/notebook#ruby-cells). They run in [rbgo](https://github.com/go-embedded-ruby/ruby), a Ruby written in Go, with the [go-scikit bindings](https://github.com/go-scikit/ruby): `Stats`, `Special`, `Optimize`, `Integrate`, `DataFrame` and `Plot` over the same compiled libraries the Go cells import, and rbgo's `NDArray`.
+
+- **The Ruby is loaded only when it is needed.** The Go core (`playground.wasm`) has no Ruby in it. A second core, `playground-ruby.wasm`, holds both languages: the Go core plus rbgo's `rbgo_core` build and the bindings. The page asks for it only when the open notebook has a Ruby cell, so a visitor who runs only Go never downloads it. `web/test/page.mjs` checks this.
+- **Variables cross between the languages.**
+  - A Go variable a Ruby cell reads is set as a Ruby local. An `*ndarray.Array` stays the same NDArray, and a `[]float64` becomes an Array.
+  - A Ruby local becomes a Go variable typed from its value: `float64`, `[]float64`, `*ndarray.Array`, or the go-scikit value itself (`stats.TTestResult`, `*plot.Figure`, …). A type of a package the playground does not have is `any`.
+  - A Ruby cell's methods and constants stay Ruby's, and so does a local named like a Go builtin (`len`).
+- **Errors** read as for Go cells: `line 2: divided by 0 (ZeroDivisionError)`, then `at line N` for each frame in the cell.
+
+### Figures are data
+
+A notebook can come from anyone (a visitor opens a file), and a cell can show any SVG it likes: a Go type's `SaveSVG` or a Ruby cell writes whatever text it wants. So a figure reaches the page through two sanitizers:
+
+- [`engine.SanitizeSVG`](engine/svg.go) rewrites it through an allowlist of SVG elements, attributes and style properties. It drops scripts and style sheets, event handlers, animation, foreign objects, and every reference outside the document: an `href` that is not a `#fragment` or an embedded PNG/JPEG/GIF, and a `url()` that is not `url(#…)`. A figure that is not well-formed XML, over 32 MiB or nested over 256 deep is shown as text. Each hostile class has a regression test, and `FuzzSanitizeSVG` (run in CI) checks that the output always parses, holds only the allowlist and comes back unchanged when sanitized again.
+- The page checks the parsed DOM again before inserting it.
+
 ### Deploying it on a site
 
 A site keeps its notebooks and a small Go module that pins the playground:

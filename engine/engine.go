@@ -25,12 +25,14 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing/fstest"
 	"time"
 
+	"github.com/go-notebook/notebook/analysis"
 	"github.com/go-notebook/notebook/format"
 	"github.com/go-notebook/playground/internal/yaegi/interp"
 
@@ -60,8 +62,10 @@ type Result struct {
 
 // Cell is a cell of a notebook, as the page shows it.
 type Cell struct {
-	// Kind is "prose" (Markdown) or "code" (Go).
+	// Kind is "prose" (Markdown) or "code".
 	Kind string `json:"kind"`
+	// Lang is a code cell's language: "go" or "ruby".
+	Lang string `json:"lang,omitempty"`
 	// Source is the cell's text, without the fences of a code cell.
 	Source string `json:"source"`
 }
@@ -74,7 +78,7 @@ func Cells(markdown string) []Cell {
 		if c.Kind == format.Code {
 			k = "code"
 		}
-		out = append(out, Cell{Kind: k, Source: c.Source})
+		out = append(out, Cell{Kind: k, Lang: c.Lang, Source: c.Source})
 	}
 	return out
 }
@@ -99,7 +103,12 @@ func Run(markdown string) []Result {
 			continue
 		}
 		start := time.Now()
-		out[i].Output, out[i].Display, out[i].Error = s.cell(c.Source)
+		if c.Lang == analysis.Ruby {
+			out[i].Output, out[i].Display, out[i].Error = s.rubyCell(c.Source)
+		} else {
+			out[i].Output, out[i].Display, out[i].Error = s.cell(c.Source)
+			s.goDefines(c.Source)
+		}
 		out[i].Millis = float64(time.Since(start).Microseconds()) / 1000
 		failed = out[i].Error != ""
 	}
@@ -113,6 +122,23 @@ type session struct {
 	out   bytes.Buffer // what the cell prints
 	trace bytes.Buffer // where a panic went through, as yaegi prints it
 	shown []map[string]string
+
+	// goVars are the variables the Go cells run so far define, which a Ruby
+	// cell can read; ruby is the Ruby side of the session (ruby.go), made
+	// by the first Ruby cell.
+	goVars map[string]bool
+	ruby   *rubySide
+}
+
+// goDefines records the variables a Go cell defines: what the notebook
+// analysis says it defines, but its funcs and types.
+func (s *session) goDefines(src string) {
+	c := analysis.AnalyzeCell(0, src)
+	for _, n := range c.Defines {
+		if !slices.Contains(c.Funcs, n) && !slices.Contains(c.Types, n) {
+			s.goVars[n] = true
+		}
+	}
 }
 
 // showPkg is the import path of the package the session gives the
@@ -120,7 +146,7 @@ type session struct {
 const showPkg = "playground.invalid/show"
 
 func newSession() *session {
-	s := &session{}
+	s := &session{goVars: map[string]bool{}}
 	s.i = interp.New(interp.Options{
 		Stdout: &s.out,
 		Stderr: &s.trace,
@@ -338,6 +364,16 @@ func Bundle(v any) map[string]string {
 	}
 	if _, ok := b["text/plain"]; !ok {
 		b["text/plain"] = fmt.Sprintf("<%T>", v)
+	}
+	// A figure reaches the page only as SanitizeSVG writes it back.
+	if svg, ok := b["image/svg+xml"]; ok {
+		clean, err := SanitizeSVG(svg)
+		if err != nil {
+			delete(b, "image/svg+xml")
+			b["text/plain"] = fmt.Sprintf("<%T: %v>", v, err)
+		} else {
+			b["image/svg+xml"] = clean
+		}
 	}
 	return b
 }

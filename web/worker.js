@@ -6,16 +6,20 @@
 
 importScripts('wasm_exec.js');
 
+// The core: the Go one, or, for a notebook with Ruby cells (worker.js?engine=ruby),
+// the one that runs Ruby cells too.
+const core = new URLSearchParams(self.location.search).get('engine') === 'ruby' ? 'playground-ruby.wasm' : 'playground.wasm';
+
 self.playgroundReady = () => postMessage({ type: 'ready' });
 
 (async () => {
   const go = new Go();
   let result;
   try {
-    result = await WebAssembly.instantiateStreaming(fetch('playground.wasm'), go.importObject);
+    result = await WebAssembly.instantiateStreaming(fetch(core), go.importObject);
   } catch (e) {
     // A server that does not say application/wasm: compile from the bytes.
-    const bytes = await (await fetch('playground.wasm')).arrayBuffer();
+    const bytes = await (await fetch(core)).arrayBuffer();
     result = await WebAssembly.instantiate(bytes, go.importObject);
   }
   go.run(result.instance);
