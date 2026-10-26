@@ -1,10 +1,10 @@
 // Command vettargets drives the "compile on every target" CI job.
 //
 // The target list always comes from `go tool dist list`; this program only
-// groups it per GOOS so CI can fan out one job per OS.
+// groups it so CI can fan out one job per OS (one per GOARCH for linux).
 //
-//	vettargets matrix        print matrix={"goos":[...]} ($GITHUB_OUTPUT line)
-//	vettargets vet <goos>    go vet ./... for every GOARCH of <goos>
+//	vettargets matrix               print matrix={"include":[...]} ($GITHUB_OUTPUT line)
+//	vettargets vet <goos> [goarch]  go vet ./... for every GOARCH of <goos>, or one
 package main
 
 import (
@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 
@@ -23,6 +24,16 @@ import (
 // skipped lists the GOOS values that link only through cgo, so a CGO_ENABLED=0
 // vet cannot type-check them.
 var skipped = map[string]bool{"android": true, "ios": true}
+
+// perArch lists the GOOS values with so many GOARCHes that one job per GOOS
+// would be the critical path: they get one matrix entry per GOARCH.
+var perArch = map[string]bool{"linux": true}
+
+// entry is one matrix row; Goarch is empty for a whole-GOOS job.
+type entry struct {
+	Goos   string `json:"goos"`
+	Goarch string `json:"goarch"`
+}
 
 var osExit = os.Exit
 
@@ -82,14 +93,25 @@ func matrix(w io.Writer) error {
 		oses = append(oses, o)
 	}
 	sort.Strings(oses)
-	// Marshalling a map of string slices cannot fail.
-	b, _ := json.Marshal(map[string][]string{"goos": oses})
+	var inc []entry
+	for _, o := range oses {
+		if !perArch[o] {
+			inc = append(inc, entry{Goos: o})
+			continue
+		}
+		for _, a := range m[o] {
+			inc = append(inc, entry{Goos: o, Goarch: a})
+		}
+	}
+	// Marshalling plain structs cannot fail.
+	b, _ := json.Marshal(map[string][]entry{"include": inc})
 	// "matrix=<json>" is the line format of $GITHUB_OUTPUT.
 	_, err = fmt.Fprintf(w, "matrix=%s\n", b)
 	return err
 }
 
-func vet(w io.Writer, goos string) error {
+// vet vets every GOARCH of goos, or only goarch when it is not empty.
+func vet(w io.Writer, goos, goarch string) error {
 	list, err := distList()
 	if err != nil {
 		return err
@@ -101,6 +123,12 @@ func vet(w io.Writer, goos string) error {
 	arches, ok := m[goos]
 	if !ok {
 		return fmt.Errorf("no targets for GOOS=%q", goos)
+	}
+	if goarch != "" {
+		if !slices.Contains(arches, goarch) {
+			return fmt.Errorf("%s/%s is not a target", goos, goarch)
+		}
+		arches = []string{goarch}
 	}
 	failed := 0
 	for _, arch := range arches {
@@ -126,8 +154,14 @@ func RootCmd() *cobra.Command {
 		RunE: func(c *cobra.Command, _ []string) error { return matrix(c.OutOrStdout()) },
 	})
 	root.AddCommand(&cobra.Command{
-		Use: "vet <goos>", Args: cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, a []string) error { return vet(c.OutOrStdout(), a[0]) },
+		Use: "vet <goos> [goarch]", Args: cobra.RangeArgs(1, 2),
+		RunE: func(c *cobra.Command, a []string) error {
+			arch := ""
+			if len(a) == 2 {
+				arch = a[1]
+			}
+			return vet(c.OutOrStdout(), a[0], arch)
+		},
 	})
 	return root
 }

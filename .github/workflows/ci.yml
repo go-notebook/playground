@@ -184,7 +184,7 @@ jobs:
   # into ~80 test binaries. One job per GOOS keeps the serial vet of each
   # GOARCH short; the old serial job took 38 minutes.
   cross:
-    name: compile on every target (${{ matrix.goos }})
+    name: compile on every target (${{ matrix.goos }}${{ matrix.goarch && format('/{0}', matrix.goarch) || '' }})
     needs: targets
     runs-on: ubuntu-latest
     strategy:
@@ -196,5 +196,7 @@ jobs:
         with:
           go-version: '1.27.3'
           cache: true
-      - name: go vet for every GOARCH of ${{ matrix.goos }}
-        run: go run ./internal/vettargets vet ${{ matrix.goos }}
+      # linux has one entry per GOARCH (it was the critical path as one job);
+      # the other systems vet all their GOARCHes in one entry (empty goarch).
+      - name: go vet ${{ matrix.goos }} ${{ matrix.goarch }}
+        run: go run ./internal/vettargets vet ${{ matrix.goos }} ${{ matrix.goarch }}

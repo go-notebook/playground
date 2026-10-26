@@ -30,7 +30,7 @@ func TestMatrixSkipsCgoOnlyAndIsSorted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(out) != `matrix={"goos":["aix","linux","windows"]}` {
+	if strings.TrimSpace(out) != `matrix={"include":[{"goos":"aix","goarch":""},{"goos":"linux","goarch":"386"},{"goos":"linux","goarch":"amd64"},{"goos":"windows","goarch":""}]}` {
 		t.Fatalf("got %q", out)
 	}
 }
@@ -125,6 +125,24 @@ func TestVetAllPass(t *testing.T) {
 	vetOne = func(string, string) (string, error) { return "", nil }
 	if _, err := run(t, "vet", "windows"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestVetOneArch(t *testing.T) {
+	distList = func() (string, error) { return sample, nil }
+	var seen []string
+	vetOne = func(goos, arch string) (string, error) {
+		seen = append(seen, goos+"/"+arch)
+		return "", nil
+	}
+	if _, err := run(t, "vet", "linux", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(seen, ",") != "linux/amd64" {
+		t.Fatalf("seen %v", seen)
+	}
+	if _, err := run(t, "vet", "linux", "mips"); err == nil {
+		t.Fatal("an unknown GOARCH must fail")
 	}
 }
 
