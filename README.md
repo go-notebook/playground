@@ -70,10 +70,18 @@ A site keeps its notebooks and a small Go module that pins the playground:
 
 ```
 playground/
-  go.mod          require github.com/go-notebook/playground v0.1.0
+  go.mod          require github.com/go-notebook/playground v0.3.0
   tools.go        //go:build tools — import _ "github.com/go-notebook/playground/cmd/build"
   notebooks/*.md
 ```
+
+To pin or bump the version, `go get` **the package**, not the module:
+
+```sh
+cd playground && go get github.com/go-notebook/playground/cmd/build@v0.3.0
+```
+
+`go get github.com/go-notebook/playground@v0.3.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
 
 and its deploy workflow builds the page into the site, from that pinned version:
 
