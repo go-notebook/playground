@@ -9,7 +9,7 @@ require (
 	github.com/go-numerics/optimize v0.2.0
 	github.com/go-numerics/special v0.1.0
 	github.com/go-plot/plot v0.1.1
-	github.com/go-scikit/ruby v0.1.0
+	github.com/go-scikit/ruby v0.1.2
 	github.com/go-statistics/stats v0.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -93,7 +93,7 @@ require (
 	github.com/go-crdt/crdt v0.55.0 // indirect
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.1.0 // indirect
-	github.com/go-embedded-ruby/ruby v0.8.2 // indirect
+	github.com/go-embedded-ruby/ruby v0.8.3 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
 	github.com/go-fft/fft v0.23.0 // indirect

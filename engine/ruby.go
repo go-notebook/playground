@@ -1,4 +1,4 @@
-//go:build (js && ruby) || (linux && (386 || amd64 || arm || arm64 || loong64 || ppc64le || riscv64 || s390x)) || (darwin && (amd64 || arm64)) || (windows && (386 || amd64 || arm64))
+//go:build (js && ruby) || !(js || wasip1 || plan9)
 
 package engine
 
@@ -18,10 +18,9 @@ import (
 // default WebAssembly core does not: it is built without them, and a
 // notebook with a Ruby cell loads the core built with the tag ruby instead,
 // so that a visitor who runs only Go never downloads the Ruby. Native builds
-// have it where rbgo v0.8.2 compiles: Linux, macOS and Windows on the
-// architectures modernc.org/sqlite (which rbgo links) supports. Elsewhere
-// (the BSDs, aix, solaris, plan9, linux/mips*, ...) the engine builds for Go
-// cells only; the page never runs there.
+// have it wherever rbgo compiles, which since v0.8.3 is every GOOS/GOARCH
+// but plan9 (go-embedded-ruby/ruby#832). wasip1 has no page to load a core
+// into, so it stays with Go cells, as does plan9.
 const RubySupported = true
 
 // rubyPkg is the package the session gives the interpreter for reading the
