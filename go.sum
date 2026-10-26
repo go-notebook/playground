@@ -213,6 +213,8 @@ github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab h1:bXPxQDhADpiF/S
 github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab/go.mod h1:ghuoOHWXdq5dE3GLPDiz3Uy0ORrvK+1hB7QC997ez2U=
 github.com/go-fft/fft v0.23.0 h1:SBQmOliIthFyRz1MbnrT/HnJejmLJxoWdLXkXsGMCis=
 github.com/go-fft/fft v0.23.0/go.mod h1:GN5V4TWCjV05ECqH1ONfjFM6Z1m2shqCdssxKGqQ41s=
+github.com/go-fleettools/landingkit v0.12.0 h1:oHv7tWo43QRdf3JOJDwNSXAPEkk3U5QNO3TmhsIfDDU=
+github.com/go-fleettools/landingkit v0.12.0/go.mod h1:gBpbziqFcmcjtNknPjy5+AAzGZ5L+pPr9mIJZHpDlZc=
 github.com/go-gfx/gfx v0.35.0 h1:AaXMxDMxNB1hROxzx+3EoO06KxsrQUvnw/10olmSgVo=
 github.com/go-gfx/gfx v0.35.0/go.mod h1:qIZS9u2+VnBk5CX7o4f/fQ5uD8c+mPFTtAPE85s8V90=
 github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 h1:eyAunbBKGExaT/qWTpapYsBw4lvXApxMixxGs+wek6k=

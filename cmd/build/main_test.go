@@ -80,7 +80,7 @@ func TestBuild(t *testing.T) {
 	if err := runTo(log, args...); err != nil {
 		t.Fatalf("%v\n%s", err, log)
 	}
-	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "notebooks/1-fit-and-test.md"} {
+	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "notebooks/1-fit-and-test.md", "cards/1.svg", "cards/5.svg"} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Error(err)
 		}
@@ -96,12 +96,20 @@ func TestBuild(t *testing.T) {
 		"--accent: #9e520f;",
 		`"name":"1-fit-and-test","title":"Fit a distribution, then test the fit"`,
 		`"kind":"code","lang":"go","source":"import (`,
+		// the loading carousel, before playground.js, which drives it
+		`<div id="loading"><style>`,
+		`aria-roledescription="carousel" aria-label="What go-notebook does"`,
+		`src="cards/1.svg?v=`,
 	} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("index.html lacks %s", want)
 		}
 	}
-	if bytes.Contains(page, []byte("</script><")) && bytes.Count(page, []byte("</script>")) != 2 {
+	if bytes.Index(page, []byte("window.landingkitCarousel=api")) > bytes.Index(page, []byte(`<script src="playground.js">`)) {
+		t.Error("the carousel's script comes after playground.js")
+	}
+	// the carousel's script, the notebooks' data and playground.js
+	if bytes.Count(page, []byte("</script>")) != 3 {
 		t.Error("a notebook closed a <script> early")
 	}
 	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
