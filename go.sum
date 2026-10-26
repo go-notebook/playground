@@ -205,8 +205,8 @@ github.com/go-dataframe/dataframe v0.1.0 h1:l92liqTQ/StH5rurH2ipgvXunMbtCJAkDNWE
 github.com/go-dataframe/dataframe v0.1.0/go.mod h1:rAJdylzFafSOhTAV6z+gSs4i0D9M9XKMKqhWUjIEolk=
 github.com/go-datetime/dates v0.1.0 h1:Uj8TaTZ09DXdq75EGQ/teFdrXpfVAC3ZDHAPQvPTnaA=
 github.com/go-datetime/dates v0.1.0/go.mod h1:KeZ1wUeMScJD6HOvj3hINwbsB+GCSFjJLWcJhrBlwIo=
-github.com/go-embedded-ruby/ruby v0.8.2 h1:vj4a+NJBb7Ou6MaBWARMEdacYtnEK7NHS2Wq1Guqr9U=
-github.com/go-embedded-ruby/ruby v0.8.2/go.mod h1:6g5bwN6eYV00ctKi3XxhXggPxBV37PGaucMFf3LFLZc=
+github.com/go-embedded-ruby/ruby v0.8.3 h1:4jB2E7cVkbMCgov6ey/rrxl9owhcekWAUTQG/AzNKsY=
+github.com/go-embedded-ruby/ruby v0.8.3/go.mod h1:6g5bwN6eYV00ctKi3XxhXggPxBV37PGaucMFf3LFLZc=
 github.com/go-encryptions/unixcrypt v0.1.0 h1:XWk4h9uCDd+T2hovOzgO0B2vOdJvAwi9nbOBVb3o62c=
 github.com/go-encryptions/unixcrypt v0.1.0/go.mod h1:B1dJSjz3kdxvP7cpi5xSzyxezgBijmtNCUeCKqqDd3o=
 github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab h1:bXPxQDhADpiF/S/8jlRFhVisFPRaxPtPgjibLnOzvsE=
@@ -638,8 +638,8 @@ github.com/go-ruby-zeitwerk/zeitwerk v0.0.0-20260916104335-29169305e951 h1:z3nFd
 github.com/go-ruby-zeitwerk/zeitwerk v0.0.0-20260916104335-29169305e951/go.mod h1:e282nPoQTTtYK2TUfrIXVe5AZ80h0lgzYvx4xpL/aDA=
 github.com/go-ruby-zlib/zlib v0.0.0-20260927173414-e9d862990b6d h1:HN8hfYpRteVZCUx4tcJU8fVWTRKNdsyzuHzf8GAuzJ4=
 github.com/go-ruby-zlib/zlib v0.0.0-20260927173414-e9d862990b6d/go.mod h1:DU4Ow6jFNhybuffUGkKvOCW6rinG5RqpRugrHH/zydk=
-github.com/go-scikit/ruby v0.1.0 h1:rFhdgYZfscOS/FS74RhDjR7u7YX+Dk0+LY9Abgc4jrg=
-github.com/go-scikit/ruby v0.1.0/go.mod h1:QtIG2nYMz+SN89Zzpzs4a6J6+PBJ/BXHMMzv4erxkUQ=
+github.com/go-scikit/ruby v0.1.2 h1:7gWEuDCbNqSWW5TbZNUtPtX2Y1cUEFWJ2+N2fqwoUbs=
+github.com/go-scikit/ruby v0.1.2/go.mod h1:cQyxrrIZGucIbGMgNqnwHWqtrrKHZWtr5couA6/Zodg=
 github.com/go-scss/scss v0.0.0-20260905061546-39932e01faa4 h1:PpCxQnwQfCJXYKj1HdDjECB3u/c/c4wOawMPT5LCFVs=
 github.com/go-scss/scss v0.0.0-20260905061546-39932e01faa4/go.mod h1:TcSRuwTSVas0+vXMRFdq4RiAmlaK+z5FQh1/6+4fWTo=
 github.com/go-simd/adler32 v0.0.0-20260923204409-4db2a9281622 h1:CGnOevgOjgWKZjKfZfMMvCEkmBlnxoge1uUHQDH6/oM=

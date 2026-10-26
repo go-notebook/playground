@@ -1,4 +1,4 @@
-//go:build (js && ruby) || (linux && (386 || amd64 || arm || arm64 || loong64 || ppc64le || riscv64 || s390x)) || (darwin && (amd64 || arm64)) || (windows && (386 || amd64 || arm64))
+//go:build (js && ruby) || !(js || wasip1 || plan9)
 
 package engine
 
