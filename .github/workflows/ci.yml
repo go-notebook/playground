@@ -163,27 +163,38 @@ jobs:
           echo "running ${{ matrix.goarch }} under $q"
           GOARCH=${{ matrix.goarch }} go test -short -exec="$q" ./...
 
-  cross:
-    name: compile on every target
+  # The GOOS list is derived from `go tool dist list` (internal/vettargets),
+  # never written by hand, so a new target is covered without editing this file.
+  targets:
+    name: list targets
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.3'
-      # go vet type-checks every package and its tests without linking. With
-      # rbgo compiling (and so the engine's Ruby side) on every target but
-      # plan9 since v0.8.3, `go test -c` per package linked a Ruby interpreter
-      # into ~80 test binaries and took this job from 16 minutes past an hour.
-      - name: go vet for every GOOS/GOARCH
-        shell: bash
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          fail=0
-          for t in $(go tool dist list); do
-            os=${t%/*}; arch=${t#*/}
-            case $os in android|ios) continue ;; esac
-            GOOS=$os GOARCH=$arch go vet ./... >/dev/null 2>err.txt || { echo "::error::$t"; cat err.txt; fail=1; }
-          done
-          exit $fail
+      - id: m
+        run: go run ./internal/vettargets matrix >> "$GITHUB_OUTPUT"
+
+  # go vet type-checks every package and its tests without linking. With
+  # rbgo compiling (and so the engine's Ruby side) on every target but
+  # plan9 since v0.8.3, `go test -c` per package linked a Ruby interpreter
+  # into ~80 test binaries. One job per GOOS keeps the serial vet of each
+  # GOARCH short; the old serial job took 38 minutes.
+  cross:
+    name: compile on every target (${{ matrix.goos }})
+    needs: targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: true
+      - name: go vet for every GOARCH of ${{ matrix.goos }}
+        run: go run ./internal/vettargets vet ${{ matrix.goos }}
