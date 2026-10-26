@@ -8,7 +8,7 @@
 
 A [go-notebook](https://github.com/go-notebook/notebook) is a Markdown document whose ` ```go ` blocks are cells. The playground shows one as a page: the prose as text, each cell as an editor, and under it what the cell printed, the value of its last expression and its figures, inline as SVG. Ctrl+Enter (⌘+Enter) runs the notebook again, in the tab: a Go interpreter, [yaegi](https://github.com/traefik/yaegi), compiled to WebAssembly, runs the cells, and the libraries they call — [go-statistics](https://github.com/go-statistics/stats), [go-numerics](https://github.com/go-numerics) (`special`, `optimize`, `integrate`), [go-ndarray](https://github.com/go-ndarray/ndarray) (with `random` and `fft`) and [go-plot](https://github.com/go-plot/plot) — run compiled, at WebAssembly speed. Only the notebook's own code is interpreted.
 
-It is deployed as `/playground/` on [go-statistics.github.io](https://go-statistics.github.io/playground/) and [go-numerics.github.io](https://go-numerics.github.io/playground/), each with its own example notebooks.
+It is deployed as `/playground/` on [go-notebook.github.io](https://go-notebook.github.io/playground/), [go-statistics.github.io](https://go-statistics.github.io/playground/) and [go-numerics.github.io](https://go-numerics.github.io/playground/), each with its own example notebooks.
 
 ```go
 import (
