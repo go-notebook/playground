@@ -171,15 +171,19 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.3'
-      - name: go test -c for every GOOS/GOARCH
+      # go vet type-checks every package and its tests without linking. With
+      # rbgo compiling (and so the engine's Ruby side) on every target but
+      # plan9 since v0.8.3, `go test -c` per package linked a Ruby interpreter
+      # into ~80 test binaries and took this job from 16 minutes past an hour.
+      - name: go vet for every GOOS/GOARCH
         shell: bash
+        env:
+          CGO_ENABLED: "0"
         run: |
           fail=0
           for t in $(go tool dist list); do
             os=${t%/*}; arch=${t#*/}
             case $os in android|ios) continue ;; esac
-            for p in $(go list ./...); do
-              GOOS=$os GOARCH=$arch go test -c -o /dev/null "$p" >/dev/null 2>err.txt || { echo "::error::$t $p"; cat err.txt; fail=1; }
-            done
+            GOOS=$os GOARCH=$arch go vet ./... >/dev/null 2>err.txt || { echo "::error::$t"; cat err.txt; fail=1; }
           done
           exit $fail
