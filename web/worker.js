@@ -12,14 +12,29 @@ const core = new URLSearchParams(self.location.search).get('engine') === 'ruby' 
 
 self.playgroundReady = () => postMessage({ type: 'ready' });
 
+// The page's loading carousel needs to know when the core has crossed the
+// wire ({type: "downloaded"}). A clone of the response is read to its end
+// beside the compile, which keeps compiling as the bytes arrive, and leaves
+// the response itself as it was (Chrome caches the compiled code of a
+// response it fetched).
+function watched(response) {
+  if (response.body) {
+    const r = response.clone().body.getReader();
+    const drain = () => r.read().then((c) => (c.done ? postMessage({ type: 'downloaded' }) : drain()));
+    drain().catch(() => {});
+  }
+  return response;
+}
+
 (async () => {
   const go = new Go();
   let result;
   try {
-    result = await WebAssembly.instantiateStreaming(fetch(core), go.importObject);
+    result = await WebAssembly.instantiateStreaming(fetch(core).then(watched), go.importObject);
   } catch (e) {
     // A server that does not say application/wasm: compile from the bytes.
     const bytes = await (await fetch(core)).arrayBuffer();
+    postMessage({ type: 'downloaded' });
     result = await WebAssembly.instantiate(bytes, go.importObject);
   }
   go.run(result.instance);

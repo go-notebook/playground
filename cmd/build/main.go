@@ -253,6 +253,12 @@ func build(c config) error {
 			return err
 		}
 	}
+	// What go-notebook does, while the core downloads: the landing kit's
+	// loading carousel, and its pictures under cards/.
+	car, err := carousel(c.out, c.accent)
+	if err != nil {
+		return err
+	}
 	data, _ := json.Marshal(exs) // escapes <, > and &: safe inside <script>
 	tmpl := template.Must(template.ParseFS(web.Files, "index.html"))
 	var page bytes.Buffer
@@ -266,6 +272,7 @@ func build(c config) error {
 		"Libraries":   html.EscapeString(c.libraries),
 		"Version":     html.EscapeString(version()),
 		"Examples":    string(data),
+		"Carousel":    string(car), // html/template's output
 	})
 	if err := os.WriteFile(filepath.Join(c.out, "index.html"), page.Bytes(), 0o644); err != nil {
 		return err

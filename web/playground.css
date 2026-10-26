@@ -60,6 +60,24 @@ button, .open {
 button:disabled { opacity: .55; cursor: default; }
 .open input { display: none; }
 #status { color: var(--muted); font-size: 14px; }
+/* The landing kit's loading carousel (cmd/build writes it with
+   landingkit.LoadingCarousel): what go-notebook does, shown only while the
+   core is still downloading after 300 ms. It floats over the corner rather
+   than in the flow, so the notebook never moves when it comes and goes; its
+   colours are the page's. */
+#loading {
+  --line: var(--border); --bg-soft: var(--surface); --ink: var(--fg); --slate: var(--muted);
+  position: fixed; right: 16px; bottom: 16px; z-index: 2;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+}
+#loading[hidden] { display: none; }
+#notebook:focus { outline: none; } /* focused from the carousel's Start button */
+#loading .lk-car { box-shadow: 0 6px 24px rgba(0, 0, 0, .18); }
+#loading .lk-car-start { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  #loading { --accent: var(--accent-bright); } /* links and dots on the dark surface */
+  #loading .lk-car-start { color: var(--bg); }
+}
 .prose { overflow-wrap: anywhere; }
 .prose pre { background: var(--surface); padding: 8px 12px; border-radius: 6px; overflow-x: auto; }
 .prose .math { font-style: italic; }

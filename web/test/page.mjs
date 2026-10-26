@@ -1,6 +1,9 @@
 // Loads a built playground in headless Chromium, lets it run its first
 // example, and checks the page: every code cell got a result, none failed,
 // and each figure is an inline <svg>. Then it runs every other example.
+// Before that it drives the loading carousel: shown on a cold load, never on
+// a cached one, gone when the runtime is ready, worked by the keyboard, and
+// still under prefers-reduced-motion.
 //
 //   node web/test/page.mjs <directory>   serve a built playground locally
 //   node web/test/page.mjs <url>         check a deployed one
@@ -11,6 +14,7 @@ import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 const target = process.argv[2];
 if (!target) {
@@ -20,16 +24,23 @@ if (!target) {
 
 let server = null;
 let url = target;
+// How many times the local server sent each file: a load served from the
+// browser's cache sends nothing.
+const served = new Map();
 if (!/^https?:/.test(target)) {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.md': 'text/markdown' };
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.md': 'text/markdown', '.svg': 'image/svg+xml' };
   server = http.createServer((req, res) => {
-    const p = path.join(target, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const p = path.join(target, name);
     const file = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, 'index.html') : p;
     if (!fs.existsSync(file)) {
       res.writeHead(404).end();
       return;
     }
-    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
+    served.set(path.basename(name), (served.get(path.basename(name)) || 0) + 1);
+    // Cacheable, as GitHub Pages serves it (max-age=600), so that a second
+    // load can come from the cache.
+    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'max-age=600' });
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -43,7 +54,169 @@ const fail = (msg) => {
   console.log('FAIL ' + msg);
   failures++;
 };
+// ---- The loading carousel ------------------------------------------------
+//
+// The landing kit's carousel shows what go-notebook does while the core is
+// still downloading after 300 ms. A slow network is made by holding the
+// core's request back for HOLD ms, longer than one rotation (4.5 s), so that
+// a rotation can be seen, or seen not to happen. The cold and cached loads
+// run in a profile of their own, on disk: only a disk cache holds a 30 MB
+// core, and a second load must be able to come from it.
+const HOLD = 5200;
+const corePattern = /\/playground(-ruby)?\.wasm(\?.*)?$/;
+async function holdCore(context) {
+  await context.route(corePattern, async (route) => {
+    await new Promise((r) => setTimeout(r, HOLD));
+    await route.continue();
+  });
+}
+async function open(context, label) {
+  const page = context.pages()[0] || (await context.newPage());
+  page.on('pageerror', (e) => fail(`${label}: page error: ${e.message}`));
+  await page.goto(url);
+  return page;
+}
+const waitReady = (page) => page.waitForFunction(() => window.playgroundTimings && window.playgroundTimings.runtimeReady !== null, null, { timeout: 120000 });
+const state = (page) => page.evaluate(() => ({ ...window.landingkitCarousel.state }));
+// whether the fade (the kit's lk-car-fading class on #loading) ever ran
+const watchFade = (page) =>
+  page.evaluate(() => {
+    window.carouselFaded = false;
+    const box = document.getElementById('loading');
+    new MutationObserver(() => {
+      if (box.classList.contains('lk-car-fading')) window.carouselFaded = true;
+    }).observe(box, { attributes: true, attributeFilter: ['class'] });
+  });
+const visibleSlide = (page) =>
+  page.$eval('#lk-carousel', (s) => [...s.querySelectorAll('.lk-car-card')].filter((c) => !c.hidden).map((c) => c.getAttribute('aria-label')).join('|'));
+
+async function carouselChecks() {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'playground-profile-'));
+  const launch = (opts) =>
+    chromium.launchPersistentContext(profile, opts).catch(() => chromium.launchPersistentContext(profile, { ...opts, channel: 'chrome' }));
+  let context = await launch({});
+  try {
+    // 1. A cold load, left alone: the carousel shows, rotates, and goes away
+    // (fading) when the runtime is ready.
+    await holdCore(context);
+    let page = await open(context, 'cold');
+    if (!(await page.$('#lk-carousel'))) {
+      fail('the page has no loading carousel');
+      return;
+    }
+    await page.waitForSelector('#lk-carousel:not([hidden])', { timeout: HOLD }).catch(() => fail('cold load: the carousel did not show while the core downloaded'));
+    await watchFade(page);
+    const label = await page.$eval('#lk-carousel', (s) => s.getAttribute('aria-label'));
+    const n = await page.$$eval('#lk-carousel .lk-car-card', (cs) => cs.length);
+    console.log(`carousel: "${label}", ${n} cards, shown on a cold load`);
+    if (n < 3) fail(`the carousel has ${n} cards`);
+    const pics = await page.$$eval('#lk-carousel .lk-car-card img', (is) => is.map((i) => i.getAttribute('src')));
+    if (!pics.every((p) => /^cards\/\d+\.svg\?v=[0-9a-f]{12}$/.test(p))) fail('a card picture is not cards/<n>.svg?v=<hash>: ' + pics.join(' '));
+    await waitReady(page);
+    await page.waitForFunction(() => document.getElementById('loading').hidden, null, { timeout: 3000 }).catch(() => fail('cold load: the carousel stayed after the runtime was ready'));
+    let st = await state(page);
+    const lag = await page.evaluate(() => performance.now() - window.playgroundTimings.runtimeReady);
+    console.log(`carousel: gone ${Math.round(lag)} ms after the runtime was ready; rotated ${st.advanced} times`);
+    if (!st.shown || !st.downloaded || st.startShown) fail('cold load: state ' + JSON.stringify(st));
+    if (st.advanced < 1) fail('cold load: the carousel never rotated in ' + HOLD + ' ms');
+    if (!(await page.evaluate(() => window.carouselFaded))) fail('cold load: the carousel did not fade');
+
+    // 2. The same profile again, the core in the cache: no carousel at all.
+    await context.unroute(corePattern);
+    const before = served.get('playground.wasm') || 0;
+    await page.goto('about:blank');
+    page = await open(context, 'cached');
+    await waitReady(page);
+    st = await state(page);
+    const fetched = (served.get('playground.wasm') || 0) - before;
+    console.log(`carousel: cached load, shown ${st.shown}` + (server ? `, core sent ${fetched} times` : ''));
+    if (st.shown) fail('cached load: the carousel flashed');
+    if (server && fetched !== 0) fail(`cached load: the core was sent again (${fetched}): this was not a cached load`);
+    if (!(await page.evaluate(() => document.getElementById('loading').hidden))) fail('cached load: #loading is not hidden');
+  } finally {
+    await context.close();
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
+
+  // 3. The keyboard, in a fresh context: the rotation button comes first;
+  // focus inside stops the rotation and makes the slides live; Enter and
+  // Space work the buttons; hidden slides take no focus. A reader in the
+  // carousel is not interrupted: the Start button waits, and moves focus to
+  // the notebook.
+  const kctx = await browser.newContext();
+  try {
+    await holdCore(kctx);
+    const page = await open(kctx, 'keyboard');
+    await page.waitForSelector('#lk-carousel:not([hidden])', { timeout: HOLD });
+    const first = await page.$eval('#lk-carousel', (s) => s.querySelector('button, a:not([tabindex="-1"])').id);
+    if (first !== 'lk-carousel-rot') fail('the first control of the region is ' + first);
+    await page.focus('#lk-carousel-rot');
+    const active = () => page.evaluate(() => {
+      const a = document.activeElement;
+      return a.id || a.getAttribute('aria-label') || a.textContent.trim();
+    });
+    const rot = () => page.$eval('#lk-carousel-rot', (b) => b.getAttribute('aria-label'));
+    if ((await rot()) !== 'Stop slide rotation') fail('focusing the rotation button stopped the rotation');
+    await page.keyboard.press('Tab');
+    const link = await page.evaluate(() => {
+      const a = document.activeElement;
+      return a.tagName === 'A' && !a.closest('.lk-car-card').hidden;
+    });
+    if (!link) fail('Tab after the rotation button is not the visible card\'s link: ' + (await active()));
+    if ((await rot()) !== 'Start slide rotation') fail('focus in the carousel did not stop the rotation');
+    if ((await page.$eval('#lk-carousel-slides', (d) => d.getAttribute('aria-live'))) !== 'polite') fail('stopped, the slides are not aria-live polite');
+    const order = [];
+    for (let i = 0; i < 12 && (await active()) !== 'lk-carousel-next'; i++) {
+      await page.keyboard.press('Tab');
+      order.push(await active());
+    }
+    if ((await active()) !== 'lk-carousel-next') fail('Tab never reached the next button: ' + order.join(', '));
+    console.log('carousel: tab order rotation, link, ' + order.join(', '));
+    const s0 = await visibleSlide(page);
+    await page.keyboard.press('Enter');
+    const s1 = await visibleSlide(page);
+    if (s1 === s0 || !/^2 of /.test(s1)) fail(`Enter on next: ${s0} -> ${s1}`);
+    const dot = await page.$$eval('.lk-car-dots button', (ds) => ds.findIndex((d) => d.getAttribute('aria-disabled') === 'true'));
+    if (dot !== 1) fail('the current dot is ' + dot);
+    await page.focus('#lk-carousel-prev');
+    await page.keyboard.press('Space');
+    if (!/^1 of /.test(await visibleSlide(page))) fail('Space on previous did not go back');
+    await page.focus('#lk-carousel-next');
+    await waitReady(page);
+    await page.waitForSelector('#lk-carousel-start:not([hidden])', { timeout: 3000 }).catch(() => fail('a reader in the carousel got no Start button'));
+    if (await page.evaluate(() => document.getElementById('loading').hidden)) fail('the carousel went away under a reader');
+    await page.keyboard.press('Tab');
+    if ((await active()) !== 'lk-carousel-start') fail('Tab after next is not the Start button: ' + (await active()));
+    await page.keyboard.press('Enter');
+    if (!(await page.evaluate(() => document.getElementById('loading').hidden))) fail('Start did not close the carousel');
+    if ((await active()) !== 'notebook') fail('after Start, focus is on ' + (await active()));
+  } finally {
+    await kctx.close();
+  }
+
+  // 4. Reduced motion: shown, but stopped from the start (live slides), never
+  // rotated, and gone at once, without the fade.
+  const rctx = await browser.newContext({ reducedMotion: 'reduce' });
+  try {
+    await holdCore(rctx);
+    const page = await open(rctx, 'reduced motion');
+    await page.waitForSelector('#lk-carousel:not([hidden])', { timeout: HOLD });
+    await watchFade(page);
+    const label = await page.$eval('#lk-carousel-rot', (b) => b.getAttribute('aria-label'));
+    if (label !== 'Start slide rotation') fail('reduced motion: the carousel rotates (' + label + ')');
+    await waitReady(page);
+    await page.waitForFunction(() => document.getElementById('loading').hidden, null, { timeout: 3000 }).catch(() => fail('reduced motion: the carousel stayed'));
+    const st = await state(page);
+    console.log(`carousel: reduced motion, rotated ${st.advanced} times, faded ${await page.evaluate(() => window.carouselFaded)}`);
+    if (st.advanced !== 0) fail('reduced motion: the carousel rotated');
+    if (await page.evaluate(() => window.carouselFaded)) fail('reduced motion: the carousel faded');
+  } finally {
+    await rctx.close();
+  }
+}
+
 try {
+  await carouselChecks();
   const page = await browser.newPage();
   page.on('pageerror', (e) => fail('page error: ' + e.message));
   // The Ruby core must be fetched only once a notebook with a Ruby cell is

@@ -15,6 +15,27 @@
   // (performance.now()), for the status line and for tests.
   const timings = (window.playgroundTimings = { runtimeReady: null, firstResult: null, rubyReady: null, firstRubyResult: null });
 
+  // ---- The loading carousel ---------------------------------------------
+
+  // The landing kit's (cmd/build writes it): it shows only while the core is
+  // still downloading after 300 ms, so a cached core never shows it. It is
+  // told when the core has crossed the wire, and when the first runtime is
+  // ready; it then fades away, or waits with its Start button for a reader
+  // who is in it. It covers the first wait only, whichever core that is: a
+  // notebook opened later shows its own wait in the status line.
+  const carousel = window.landingkitCarousel;
+  let carouselDone = false;
+  function carouselOver() {
+    if (carouselDone || !carousel) return;
+    carouselDone = true;
+    carousel.done(() => {
+      const box = $('loading');
+      const inside = box.contains(document.activeElement);
+      box.hidden = true;
+      if (inside) article.focus(); // focus goes to the notebook, not to the body
+    });
+  }
+
   // ---- The worker -------------------------------------------------------
 
   let worker = null;
@@ -31,8 +52,13 @@
     worker = new Worker(engine === 'ruby' ? 'worker.js?engine=ruby' : 'worker.js');
     worker.onmessage = (e) => {
       const m = e.data;
+      if (m.type === 'downloaded') {
+        if (carousel) carousel.downloaded();
+        return;
+      }
       if (m.type === 'ready') {
         ready = true;
+        carouselOver();
         if (timings.runtimeReady === null) timings.runtimeReady = performance.now();
         if (engine === 'ruby' && timings.rubyReady === null) timings.rubyReady = performance.now();
         runButton.disabled = false;
@@ -41,6 +67,7 @@
         return;
       }
       if (m.type === 'fatal') {
+        carouselOver(); // the wait is over: the status line says why
         setStatus('The Go runtime did not start: ' + m.error);
         return;
       }

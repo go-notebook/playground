@@ -36,6 +36,16 @@ The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaS
 - **[internal/yaegi](internal/yaegi/)** — yaegi v0.16.1's interpreter with three fixes the playground needs; [its README](internal/yaegi/README.md) lists them.
 - **[cmd/build](cmd/build/)** — writes a deployable directory from a set of notebooks. It first **runs every notebook natively and fails if a cell fails**, then builds the WebAssembly core from source (`GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w"`), copies Go's `wasm_exec.js` and writes the page with the notebooks in it.
 
+### While it loads
+
+The Go core is 7.6 MB on the wire, the Ruby core about 12.7 MB. While the first one downloads, the page shows what go-notebook does: the [landing kit](https://github.com/go-fleettools/landingkit)'s loading carousel, the same component as the go-slides playground's, rendered by `cmd/build` with `landingkit.LoadingCarousel` (the kit executes its own Hugo partial, so nothing is copied here).
+
+- Five cards: cells, the reactive kernel, Ruby cells, figures, export to HTML. Their words come from go-notebook's README and documentation, and each links to the page that says more. The pictures (`cards/<n>.svg`) are drawn by `cmd/build`: a Go cell's picture is what the engine gives for it when the site is built, the value it shows or its go-plot figure.
+- It shows only while the core is **still downloading after 300 ms**. The worker reads a clone of the core's response to its end and tells the page, so a cached core never shows it, however long its compile takes.
+- It floats in the corner, so the notebook does not move when it comes and goes, and it goes when the runtime is ready: it fades away, or, for a reader who is in it (hovering, focused, or a click in the last 6 s), waits with an **Open the notebook** button that moves focus to the notebook.
+- The kit's WAI-ARIA carousel pattern: the rotation button first, labelled slides, dots as buttons; focus stops the rotation, hover pauses it. Under `prefers-reduced-motion` it neither rotates nor fades.
+- It covers **the first wait only**, whichever core that is: a visitor who arrives on a Ruby notebook (`#3-ruby`) sees it during the Ruby core's download. Opening a Ruby notebook later does not bring it back: the reader is already reading a notebook, and the status line says *Loading the Ruby runtime…*.
+
 ### Ruby cells
 
 A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.com/go-notebook/notebook#ruby-cells). They run in [rbgo](https://github.com/go-embedded-ruby/ruby), a Ruby written in Go, with the [go-scikit bindings](https://github.com/go-scikit/ruby): `Stats`, `Special`, `Optimize`, `Integrate`, `DataFrame` and `Plot` over the same compiled libraries the Go cells import, and rbgo's `NDArray`.
@@ -117,7 +127,7 @@ These are yaegi's limits, met while writing the examples, and listed so that nob
 
 ## Tests
 
-`go test ./...` runs every example notebook headlessly and compares each cell's output with [`engine/testdata/golden`](engine/testdata/golden/) (numbers to 1e-9 relative or 1e-11 absolute, so that a last-bit difference between architectures is not a failure; `-update` rewrites them); it tests the cell conventions and each patched yaegi defect, the symbol tables (every generated wrapper is called, every interface wrapper reaches its function) and `cmd/build`, which builds the real WebAssembly core. Coverage is 100% outside `internal/yaegi`. CI also builds both example sites and runs [`web/test/page.mjs`](web/test/page.mjs) in headless Chromium: the page loads, every example runs, every cell gets a result, none fails, and every figure is an `<svg>`. The same script checks a deployed playground: `node web/test/page.mjs https://go-statistics.github.io/playground/`.
+`go test ./...` runs every example notebook headlessly and compares each cell's output with [`engine/testdata/golden`](engine/testdata/golden/) (numbers to 1e-9 relative or 1e-11 absolute, so that a last-bit difference between architectures is not a failure; `-update` rewrites them); it tests the cell conventions and each patched yaegi defect, the symbol tables (every generated wrapper is called, every interface wrapper reaches its function) and `cmd/build`, which builds the real WebAssembly core. Coverage is 100% outside `internal/yaegi`. CI also builds both example sites and runs [`web/test/page.mjs`](web/test/page.mjs) in headless Chromium: the page loads, every example runs, every cell gets a result, none fails, and every figure is an `<svg>`. It drives the loading carousel first, with the core's request held back for 5.2 s: shown on a cold load, rotating and fading; never on a second load from the cache (the local server is not asked for the core again); worked with Tab, Enter and Space, the Start button waiting for a reader in it; still and unfaded under reduced motion. The same script checks a deployed playground: `node web/test/page.mjs https://go-statistics.github.io/playground/`.
 
 ## License
 

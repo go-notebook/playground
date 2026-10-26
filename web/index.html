@@ -25,7 +25,8 @@
     <label class="open">Open .md<input id="open" type="file" accept=".md,text/markdown"></label>
     <span id="status" role="status">Loading the Go runtime…</span>
   </div>
-  <article id="notebook"></article>
+  <article id="notebook" tabindex="-1"></article>
+  <div id="loading">{{.Carousel}}</div>
 </main>
 <footer>
   <p>Each <code>```go</code> block of the Markdown is a cell; what a cell defines, the cells after it see.
