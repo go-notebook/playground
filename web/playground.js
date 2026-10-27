@@ -49,6 +49,8 @@
 
   function startWorker() {
     ready = false;
+    fatal = null;
+    updateBadges();
     worker = new Worker(engine === 'ruby' ? 'worker.js?engine=ruby' : 'worker.js');
     worker.onmessage = (e) => {
       const m = e.data;
@@ -62,12 +64,15 @@
         if (timings.runtimeReady === null) timings.runtimeReady = performance.now();
         if (engine === 'ruby' && timings.rubyReady === null) timings.rubyReady = performance.now();
         runButton.disabled = false;
+        updateBadges();
         for (const q of queue) worker.postMessage(q);
         queue = [];
         return;
       }
       if (m.type === 'fatal') {
         carouselOver(); // the wait is over: the status line says why
+        fatal = m.error;
+        updateBadges();
         setStatus('The Go runtime did not start: ' + m.error);
         return;
       }
@@ -113,6 +118,33 @@
     return hasRuby;
   }
 
+  // ---- Language badges --------------------------------------------------
+
+  // Each code cell says, in text, which language runs it: the first word of
+  // its fence's info string (```go, ```ruby), as go-notebook's format package
+  // reads it, never guessed from the code. While the runtime that runs that
+  // language is not ready, or cannot run it, the badge says so too.
+  const LANGS = { go: 'Go', ruby: 'Ruby', julia: 'Julia' };
+  const langName = (l) => (Object.hasOwn(LANGS, l) ? LANGS[l] : l); // "__proto__" is a word too
+  let fatal = null;
+  function langStatus(lang) {
+    if (lang !== 'go' && lang !== 'ruby') return 'not run in this playground';
+    if (fatal) return 'cannot run: the runtime did not start';
+    if (lang === 'ruby' && engine !== 'ruby') return 'waits for the Ruby runtime';
+    if (!ready) return lang === 'ruby' ? 'loading the Ruby runtime…' : 'loading the runtime…';
+    return '';
+  }
+  function updateBadges() {
+    if (!nb) return;
+    for (const c of nb.cells) {
+      if (c.kind !== 'code' || !c.el) continue;
+      const s = langStatus(c.lang || 'go');
+      c.el.status.textContent = s ? ' · ' + s : '';
+      c.el.badge.dataset.runnable = s ? 'no' : 'yes';
+    }
+  }
+  window.playgroundLangName = langName; // for web/test/page.mjs
+
   // ---- The notebook -----------------------------------------------------
 
   // nb.cells: {kind: "prose" | "code", source}; the DOM of a code cell is
@@ -141,6 +173,7 @@
 
   function render() {
     article.textContent = '';
+    let n = 0;
     for (const c of nb.cells) {
       if (c.kind === 'prose') {
         const div = document.createElement('div');
@@ -155,8 +188,23 @@
       ta.value = c.source.replace(/\n$/, '');
       ta.spellcheck = false;
       ta.setAttribute('autocapitalize', 'off');
-      ta.setAttribute('aria-label', (c.lang === 'ruby' ? 'Ruby' : 'Go') + ' cell');
-      cell.dataset.lang = c.lang || 'go';
+      const lang = c.lang || 'go';
+      ta.setAttribute('aria-label', langName(lang) + ' cell');
+      cell.dataset.lang = lang;
+      // the badge: the language, then whether it can run now
+      const head = document.createElement('div');
+      head.className = 'cell-head';
+      const badge = document.createElement('span');
+      badge.className = 'lang-badge';
+      badge.id = 'cell-lang-' + n++;
+      const name = document.createElement('span');
+      name.className = 'lang-name';
+      name.textContent = langName(lang);
+      const status = document.createElement('span');
+      status.className = 'lang-status';
+      badge.append(name, status);
+      head.append(badge);
+      ta.setAttribute('aria-describedby', badge.id);
       ta.rows = Math.max(1, ta.value.split('\n').length);
       ta.addEventListener('input', () => {
         c.source = ta.value + '\n';
@@ -177,10 +225,11 @@
       meta.className = 'meta';
       const out = document.createElement('div');
       out.className = 'outputs';
-      cell.append(ta, meta, out);
+      cell.append(head, ta, meta, out);
       article.append(cell);
-      c.el = { cell, meta, out };
+      c.el = { cell, meta, out, badge, status };
     }
+    updateBadges();
   }
 
   // compose writes the notebook back as Markdown: prose as it was, each code
@@ -352,6 +401,10 @@
         flush();
         closeList();
         const body = [];
+        // a fence in a language that is not a cell's stays prose, and says so
+        const word = l.slice(m[0].length).trim().split(/\s+/)[0];
+        if (word)
+          html += `<span class="lang-badge" data-runnable="no"><span class="lang-name">${esc(langName(word))}</span><span class="lang-status"> · not run: shown as text</span></span>`;
         for (i++; i < lines.length && !lines[i].trim().startsWith(m[1]); i++) body.push(lines[i]);
         html += '<pre><code>' + esc(body.join('\n')) + '</code></pre>';
       } else if (l.trim() === '$$') {
