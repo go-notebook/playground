@@ -38,7 +38,7 @@ The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaS
 
 ### Each cell says its language
 
-Above each cell, a badge says which language runs it, **Go** or **Ruby**. The badge is text, not a colour, and it is the cell's description for a screen reader. The language comes from the fence's info string (` ```go `, ` ```ruby `), as go-notebook's `format` package reads it, never from the code. While the runtime that runs the cell is not ready, the badge says so: *Go · loading the runtime…*, *Ruby · loading the Ruby runtime…*. It says *cannot run: the runtime did not start* if the runtime failed. A fenced block in any other language (` ```python `) is not a cell. It stays prose, shown as text under a badge that says *python · not run: shown as text*. The editor is a plain `<textarea>` with no syntax highlighting, so the badge is how a cell shows its language. `web/test/page.mjs` checks every example's badges, their wording before the runtime is ready, other fences, and their fit at 360 px.
+Above each cell, a badge says which language runs it, **Go** or **Ruby**, or that a **Julia** cell is not runnable yet. The badge is text, not a colour, and it is the cell's description for a screen reader. The language comes from the fence's info string (` ```go `, ` ```ruby `), as go-notebook's `format` package reads it, never from the code. While the runtime that runs the cell is not ready, the badge says so: *Go · loading the runtime…*, *Ruby · loading the Ruby runtime…*. It says *cannot run: the runtime did not start* if the runtime failed. A fenced block in any other language (` ```python `) is not a cell. It stays prose, shown as text under a badge that says *python · not run: shown as text*. The editor is a plain `<textarea>` with no syntax highlighting, so the badge is how a cell shows its language. `web/test/page.mjs` checks every example's badges, their wording before the runtime is ready, other fences, and their fit at 360 px.
 
 ### While it loads
 
@@ -60,6 +60,16 @@ A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.co
   - A Ruby local becomes a Go variable typed from its value: `float64`, `[]float64`, `*ndarray.Array`, or the go-scikit value itself (`stats.TTestResult`, `*plot.Figure`, …). A type of a package the playground does not have is `any`.
   - A Ruby cell's methods and constants stay Ruby's, and so does a local named like a Go builtin (`len`).
 - **Errors** read as for Go cells: `line 2: divided by 0 (ZeroDivisionError)`, then `at line N` for each frame in the cell.
+
+### Julia cells: checked, not run yet
+
+A ` ```julia ` cell is parsed and checked as in [go-notebook](https://github.com/go-notebook/notebook#julia-cells-parsed-and-checked-not-run-yet), with [go-embedded-julia](https://github.com/go-embedded-julia/julia)'s parser compiled to WebAssembly. It does not run: go-embedded-julia has no runtime yet (its milestone M3).
+
+- Its badge reads *Julia · not runnable yet*.
+- A syntax error is shown at its line and column, with julia's message: ``line 2:8: syntax error: Expected `)` or `,` ``.
+- A cell without one fails with *Julia cells are parsed and checked, but not run yet: execution arrives with go-embedded-julia's runtime (milestone M3)*.
+- The cells that read what it defines are **blocked** and say so: in any language, directly or through other cells, by go-notebook's dependency graph. The other cells run.
+- **The parser is in the second core only.** It adds 1.0 MB to `playground-ruby.wasm` (0.28 MB gzipped, +2.2%), and nothing to `playground.wasm`, whose code never calls it, so the linker leaves it out. The page loads the second core for a notebook with a Julia cell, as for a Ruby one, and the status line says *Loading the Julia parser…*. `web/test/page.mjs` checks the badge, the blocked cell and the independent one.
 
 ### Figures are data
 
