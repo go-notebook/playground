@@ -58,7 +58,11 @@ button, .open {
 }
 #run { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 button:disabled { opacity: .55; cursor: default; }
-.open input { display: none; }
+/* the file input stays focusable: Tab reaches "Open .md", Enter opens it */
+.open { position: relative; }
+.open input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.open:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+#undo { font-weight: 600; }
 #status { color: var(--muted); font-size: 14px; }
 /* The landing kit's loading carousel (cmd/build writes it with
    landingkit.LoadingCarousel): what go-notebook does, shown only while the
@@ -81,7 +85,36 @@ button:disabled { opacity: .55; cursor: default; }
 .prose { overflow-wrap: anywhere; }
 .prose pre { background: var(--surface); padding: 8px 12px; border-radius: 6px; overflow-x: auto; }
 .prose .math { font-style: italic; }
-.cell { margin: 16px 0; }
+.cell { margin: 8px 0; padding: 6px; border-radius: 8px; border: 1px solid transparent; }
+/* The mode in shape as well as in the words of .mode: a selected cell has a
+   dashed outline, a cell being edited a solid one (around its editor). */
+.cell:focus { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.cell:focus-within { border-color: var(--border); }
+.cell .mode { font-size: 12px; color: var(--muted); }
+.cell .more { display: none; padding: 0 8px; font-size: 16px; line-height: 1.4; }
+.cell .actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; opacity: 0; transition: opacity .1s; }
+.cell:hover .actions, .cell:focus-within .actions { opacity: 1; }
+.cell .actions button { padding: 1px 8px; font-size: 13px; }
+.cell-note { margin: 2px 0 6px; font-size: 13px; color: var(--fg); background: var(--surface); border-left: 3px solid var(--muted); padding: 4px 8px; }
+.lang-select { font: inherit; font-weight: 600; color: var(--fg); background: transparent; border: 0; padding: 0 2px; }
+.lang-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.prose-cell textarea { font-family: inherit; }
+.cell textarea[hidden], .cell .prose[hidden] { display: none; }
+/* "+ Add cell", between the cells and at the end */
+.add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0; }
+.add-btn { padding: 0 10px; font-size: 13px; color: var(--muted); background: transparent; border-style: dashed; }
+.add-btn:hover, .add-btn:focus-visible, .add-btn[aria-expanded="true"] { color: var(--fg); }
+.add-menu { display: flex; flex-wrap: wrap; gap: 4px; }
+.add-menu[hidden] { display: none; }
+.add-menu button { font-size: 13px; padding: 1px 10px; }
+@media (hover: none) { .cell .actions { opacity: 1; } }
+/* Narrow: the actions fold behind "⋯", which is always there. */
+@media (max-width: 560px) {
+  .cell .more { display: inline-block; margin-left: auto; }
+  .cell .actions { display: none; width: 100%; margin-left: 0; opacity: 1; }
+  .cell .actions.open { display: flex; }
+  .cell .mode { flex-basis: 100%; }
+}
 /* Each cell's language, as text (the fence's ```go or ```ruby), and while
    it cannot run, why: a dashed border repeats it, never colour alone. */
 .cell-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 4px; }

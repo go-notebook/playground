@@ -6,7 +6,7 @@
 
 **Go notebooks in the browser: cells interpreted in WebAssembly, no server.**
 
-A [go-notebook](https://github.com/go-notebook/notebook) is a Markdown document whose ` ```go ` blocks are cells. The playground shows one as a page: the prose as text, each cell as an editor, and under it what the cell printed, the value of its last expression and its figures, inline as SVG. Ctrl+Enter (⌘+Enter) runs the notebook again, in the tab: a Go interpreter, [yaegi](https://github.com/traefik/yaegi), compiled to WebAssembly, runs the cells, and the libraries they call — [go-statistics](https://github.com/go-statistics/stats), [go-numerics](https://github.com/go-numerics) (`special`, `optimize`, `integrate`), [go-ndarray](https://github.com/go-ndarray/ndarray) (with `random` and `fft`) and [go-plot](https://github.com/go-plot/plot) — run compiled, at WebAssembly speed. Only the notebook's own code is interpreted.
+A [go-notebook](https://github.com/go-notebook/notebook) is a Markdown document whose ` ```go ` blocks are cells. The playground shows one as a page: the prose as text, each cell as an editor, and under it what the cell printed, the value of its last expression and its figures, inline as SVG. Cells can be added, edited, deleted, moved and switched between Go, Ruby and Markdown ([Editing a notebook](#editing-a-notebook)). Shift+Enter runs a cell again, in the tab: a Go interpreter, [yaegi](https://github.com/traefik/yaegi), compiled to WebAssembly, runs the cells, and the libraries they call — [go-statistics](https://github.com/go-statistics/stats), [go-numerics](https://github.com/go-numerics) (`special`, `optimize`, `integrate`), [go-ndarray](https://github.com/go-ndarray/ndarray) (with `random` and `fft`) and [go-plot](https://github.com/go-plot/plot) — run compiled, at WebAssembly speed. Only the notebook's own code is interpreted.
 
 It is deployed as `/playground/` on [go-notebook.github.io](https://go-notebook.github.io/playground/), [go-statistics.github.io](https://go-statistics.github.io/playground/) and [go-numerics.github.io](https://go-numerics.github.io/playground/), each with its own example notebooks.
 
@@ -35,6 +35,31 @@ The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaS
 - **[symbols/](symbols/)** — the packages a cell may import, as yaegi symbol tables written by `yaegi extract` (`go generate ./symbols`; CI checks that the committed tables are what it writes): a subset of the standard library (`fmt`, `math`, `math/rand`, `math/rand/v2`, `math/cmplx`, `math/bits`, `math/big`, `sort`, `strings`, `strconv`, `errors`, `time`, `bytes`, `bufio`, `io`, `text/tabwriter`, `unicode`, `unicode/utf8`; `cmp`, `maps` and `slices` from yaegi's source) and the libraries above. Nothing reaches the network or a file system.
 - **[internal/yaegi](internal/yaegi/)** — yaegi v0.16.1's interpreter with three fixes the playground needs; [its README](internal/yaegi/README.md) lists them.
 - **[cmd/build](cmd/build/)** — writes a deployable directory from a set of notebooks. It first **runs every notebook natively and fails if a cell fails**, then builds the WebAssembly core from source (`GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w"`), copies Go's `wasm_exec.js` and writes the page with the notebooks in it.
+
+### Editing a notebook
+
+The Markdown is the only source of truth. The page never writes Markdown itself: every edit goes to the WebAssembly core, which applies it to the cells with go-notebook's `format` package and writes the document back with `Notebook.String()` (`engine.Edit`). So **Download .md** gives back exactly what was opened, byte for byte (`~~~` fences and info-string options included), plus only the edits. `engine`'s tests check this round trip on every example notebook, and `FuzzEdit` checks it on any input. `web/test/page.mjs` checks it in the browser.
+
+The model follows Jupyter's gestures (Notebook 7 / JupyterLab). Its languages are per cell, as in Polyglot Notebooks, because a go-notebook cell's fence names its language.
+
+- **Edit a cell**: type in it. A cell being edited says *editing* and has a solid outline. Esc selects the cell instead, which then says *selected* and has a dashed outline. Enter edits it again. A Markdown cell shows as text until its **Edit** button (or Enter) opens it.
+- **Run**:
+  - **▶ Run** on a cell, Shift+Enter (then on to the next cell) or Ctrl/⌘+Enter (stay) runs that cell. The playground keeps no values between runs and has no dependency graph, so running a cell **runs every cell above it too**, never the cells below; those keep their results, greyed as stale.
+  - **Run all** runs the whole notebook.
+  - Running the first cell of an example takes no longer than Run all (`page.mjs` measures both).
+- **Add a cell**: **+ Add cell**, between cells and at the end, offers Go, Ruby, *Julia (parse and check only)* or Markdown. The language of the code cell above comes first, marked *(as above)*. Keys on a selected cell: A adds above, B adds below, Alt+Enter runs and adds below.
+- **Change a cell's language**: the language badge is the cell's own `<select>`. A change rewrites only the first word of the fence's info string. The text is not translated, and the cell says so. Then the cell runs again. Keys: M makes it Markdown, Y makes it code.
+- **Delete, undo, move**: each cell's buttons, or D D, Z, and Ctrl+Shift+↑/↓. A delete is undone with **Undo delete** or Z rather than asked about. On a narrow screen the buttons fold behind **⋯**; on a touch screen they are always shown.
+- **Open .md** reads a local file with the same rules. Files over 1 MiB are refused, with a message.
+
+### Limits
+
+An opened or edited notebook is untrusted. In the playground:
+
+- **Time**: a cell may run for 30 s. Then its worker is killed, the cell says `stopped: the cell ran longer than 30s, the limit; its worker was killed` as the kernel's `--timeout` does, and the next run starts a fresh runtime.
+- **Memory: no limit.** A WebAssembly worker cannot be given a heap bound that the page enforces while a cell runs: the worker's thread is busy and the page cannot read its memory. The kernel's `--memory` has no equivalent here; the browser's own limit (4 GiB for 32-bit WebAssembly) is the only one.
+- **Size**: notebooks up to 1 MiB, when opened and after each edit (`engine.MaxNotebook`); `cmd/build` refuses larger examples.
+- No network, no file system, no bridge to the page's JavaScript, in either language. Every figure goes through both sanitizers.
 
 ### Each cell says its language
 
@@ -84,7 +109,7 @@ A site keeps its notebooks and a small Go module that pins the playground:
 
 ```
 playground/
-  go.mod          require github.com/go-notebook/playground v0.4.0
+  go.mod          require github.com/go-notebook/playground v0.5.0
   tools.go        //go:build tools — import _ "github.com/go-notebook/playground/cmd/build"
   notebooks/*.md
 ```
@@ -92,10 +117,10 @@ playground/
 To pin or bump the version, `go get` **the package**, not the module:
 
 ```sh
-cd playground && go get github.com/go-notebook/playground/cmd/build@v0.4.0
+cd playground && go get github.com/go-notebook/playground/cmd/build@v0.5.0
 ```
 
-`go get github.com/go-notebook/playground@v0.4.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
+`go get github.com/go-notebook/playground@v0.5.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
 
 and its deploy workflow builds the page into the site, from that pinned version:
 
@@ -144,7 +169,7 @@ These are yaegi's limits, met while writing the examples, and listed so that nob
 - **The float constants of compiled packages are `float64` values**, not untyped constants. yaegi refused to mix an untyped constant of a compiled package with one of the notebook (`math.Pi * 50.0` was `mismatched types untyped float64 and untyped float`), so the tables give them as `float64`: `2 * math.Pi`, `math.Pi * 50.0`, `const tau = 2 * math.Pi` and `var x float32 = math.Pi` work, `const c float32 = math.Pi` does not (`constant definition loop`): write `float32(math.Pi)`.
 - An unexported field of a struct the notebook declares shows as `X` + its name (`{A:1 Xb:2}`): yaegi exports it to build the type with `reflect`.
 - No `os`, `net`, `unsafe`, `reflect`, `syscall` or `testing`. An import of a package the playground does not have says which ones it has.
-- Cells run in document order, all of them, on each run. go-notebook's kernel orders cells by what they use and runs only what changed; the playground runs the whole notebook again, which takes milliseconds, so the page always shows the state the code makes. A cell may define a name again (yaegi allows it); the kernel would refuse.
+- Cells run in document order: all of them, or a cell and every cell above it. go-notebook's kernel orders cells by what they use and runs only what changed. The playground runs the notebook again, which takes milliseconds, so the page always shows the state the code makes. A cell may define a name again (yaegi allows it); the kernel would refuse.
 - A yaegi defect that crashes the interpreter is caught and reported as `the interpreter failed on this code (a yaegi defect)`, rather than taking the page down.
 
 ## Tests

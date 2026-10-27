@@ -63,6 +63,9 @@ const fail = (msg) => {
 // run in a profile of their own, on disk: only a disk cache holds a 30 MB
 // core, and a second load must be able to come from it.
 const HOLD = 5200;
+// A code cell's language badge (prose cells have one too, and so do the
+// fences in prose).
+const CODE_BADGES = '#notebook .cell[data-lang] .cell-head .lang-badge';
 const corePattern = /\/playground(-ruby)?\.wasm(\?.*)?$/;
 async function holdCore(context) {
   await context.route(corePattern, async (route) => {
@@ -107,7 +110,7 @@ async function carouselChecks() {
     await page.waitForSelector('#lk-carousel:not([hidden])', { timeout: HOLD }).catch(() => fail('cold load: the carousel did not show while the core downloaded'));
     await watchFade(page);
     // While the core is held back, every cell's badge says it cannot run yet.
-    const waiting = await page.$$eval('#notebook .cell .lang-badge', (bs) => bs.map((b) => [b.dataset.runnable, b.textContent]));
+    const waiting = await page.$$eval(CODE_BADGES, (bs) => bs.map((b) => [b.dataset.runnable, b.textContent]));
     console.log('badges while the core downloads: ' + [...new Set(waiting.map((w) => w[1]))].join(' | '));
     if (!waiting.length || !waiting.every(([r, t]) => r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime)$/.test(t)))
       fail('a badge does not say its cell cannot run yet: ' + JSON.stringify(waiting));
@@ -227,6 +230,147 @@ async function carouselChecks() {
   }
 }
 
+// ---- Editing --------------------------------------------------------------
+
+const CODE_CELLS = '#notebook .cell[data-lang]';
+const DONE = 'body[data-state="done"], body[data-state="error"]';
+const settle = (page) => page.evaluate(() => (document.body.dataset.state = 'switching'));
+async function waitDone(page) {
+  await page.waitForSelector(DONE, { timeout: 180000 });
+}
+// downloadBytes clicks Download and returns the file the browser saves.
+async function downloadBytes(page) {
+  const [d] = await Promise.all([page.waitForEvent('download'), page.click('#download')]);
+  return fs.readFileSync(await d.path());
+}
+// ranMs does something that runs cells and returns the run's time, as the
+// status line says it.
+async function ranMs(page, act) {
+  await settle(page);
+  await act();
+  await waitDone(page);
+  const s = await page.textContent('#status');
+  const m = s.match(/Ran \d+ cells? in ([\d.]+) (ms|s)\./);
+  if (!m) {
+    fail('no run time in the status: ' + s);
+    return NaN;
+  }
+  return m[2] === 's' ? +m[1] * 1000 : +m[1];
+}
+async function openFile(page, name, text) {
+  await settle(page);
+  await page.setInputFiles('#open', { name, mimeType: 'text/markdown', buffer: Buffer.isBuffer(text) ? text : Buffer.from(text) });
+}
+const codeState = (page) =>
+  page.$$eval(CODE_CELLS, (cs) =>
+    cs.map((c) => ({ lang: c.dataset.lang, out: (c.querySelector('.outputs').textContent || '').trim(), note: (c.querySelector('.cell-note') || {}).textContent || '' }))
+  );
+
+// A visitor adds a Ruby cell, types into it, runs it, makes it Go, deletes
+// and brings it back, moves it, and downloads the notebook, which reads back
+// byte for byte; all from the + control, the cell's own controls and
+// Jupyter's keys.
+async function editingChecks(page) {
+  const start = '# edit\n\nSome text.\n\n~~~go {.opt}\nx := 21\n~~~\n';
+  await openFile(page, 'edit.md', start);
+  await waitDone(page);
+  // prose shows as text until Edit (or Enter on it) opens its editor
+  const proseEditors = await page.$$eval('.prose-cell textarea', (ts) => ts.filter((t) => t.offsetParent !== null).length);
+  if (proseEditors) fail(`${proseEditors} prose editors are open before anyone asked`);
+  await page.locator('.prose-cell .actions button', { hasText: 'Edit' }).click();
+  if (!(await page.evaluate(() => document.activeElement.closest('.prose-cell') && document.activeElement.tagName === 'TEXTAREA')))
+    fail('Edit on a Markdown cell does not open its editor');
+  await page.keyboard.press('Escape');
+  if (await page.$eval('.prose-cell textarea', (t) => t.offsetParent !== null)) fail('Esc does not close a Markdown editor');
+  if ((await downloadBytes(page)).toString() !== start) fail('an opened notebook does not download as it was');
+
+  // + Add cell at the end: the menu offers the cell above's language first
+  await page.click('#add-end');
+  const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
+  console.log('add menu: ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),Ruby,Julia (parse and check only),Markdown') fail('the + menu offers ' + kinds.join(', '));
+  await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
+  await page.waitForFunction(() => {
+    const a = document.activeElement;
+    return a && a.tagName === 'TEXTAREA' && a.closest('.cell').dataset.lang === 'ruby';
+  });
+  const mode = await page.evaluate(() => document.activeElement.closest('.cell').querySelector('.mode').textContent);
+  if (!/^editing/.test(mode)) fail('a cell being edited does not say so: ' + mode);
+  await page.keyboard.type('x * 2');
+  await settle(page);
+  await page.keyboard.press('Shift+Enter'); // run it, and move on
+  await waitDone(page);
+  let cells = await codeState(page);
+  console.log('after adding a Ruby cell: ' + JSON.stringify(cells));
+  if (cells.length !== 2 || cells[1].lang !== 'ruby' || cells[1].out !== '42') fail('the new Ruby cell did not run to 42: ' + JSON.stringify(cells));
+
+  // its language, through its badge: the fence changes, the code does not
+  await settle(page);
+  await page.selectOption(CODE_CELLS + '[data-lang="ruby"] .lang-select', 'go');
+  await waitDone(page);
+  cells = await codeState(page);
+  console.log('after Ruby -> Go: ' + JSON.stringify(cells));
+  if (cells[1].lang !== 'go' || cells[1].out !== '42' || !/not translated/.test(cells[1].note)) fail('Ruby -> Go: ' + JSON.stringify(cells));
+
+  // D D deletes the selected cell, Z brings it back
+  await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await page.waitForFunction((s) => document.querySelectorAll(s).length === 1, CODE_CELLS);
+  if (await page.isHidden('#undo')) fail('no Undo button after a delete');
+  await page.keyboard.press('z');
+  await page.waitForFunction((s) => document.querySelectorAll(s).length === 2, CODE_CELLS);
+  // B adds a cell below in the language above, Esc selects it, D D deletes it
+  await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
+  await page.keyboard.press('b');
+  await page.waitForFunction((s) => document.querySelectorAll(s).length === 3 && document.activeElement.tagName === 'TEXTAREA', CODE_CELLS);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await page.waitForFunction((s) => document.querySelectorAll(s).length === 2, CODE_CELLS);
+
+  // the download, and the same file opened and downloaded again
+  const out = (await downloadBytes(page)).toString();
+  const want = '# edit\n\nSome text.\n\n~~~go {.opt}\nx := 21\n~~~\n```go\nx * 2\n```\n';
+  if (out !== want) fail('the edited notebook downloads as ' + JSON.stringify(out));
+  // Ctrl+Shift+Up moves the selected cell up; the file follows
+  await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
+  await page.keyboard.press('Control+Shift+ArrowUp');
+  await page.waitForFunction((s) => document.querySelector(s).querySelector('textarea').value === 'x * 2', CODE_CELLS);
+  const moved = (await downloadBytes(page)).toString();
+  if (!moved.includes('```go\nx * 2\n```\n~~~go {.opt}\nx := 21\n~~~\n')) fail('after a move: ' + JSON.stringify(moved));
+  await openFile(page, 'again.md', moved);
+  await waitDone(page);
+  const again = (await downloadBytes(page)).toString();
+  console.log('round trip: ' + (again === moved ? 'byte for byte' : 'DIFFERS'));
+  if (again !== moved) fail('download, open, download changed the file: ' + JSON.stringify(again));
+
+  // Open refuses a file over 1 MiB, and says so
+  await openFile(page, 'big.md', Buffer.alloc((1 << 20) + 1, 0x61));
+  await page.waitForSelector('body[data-state="refused"]', { timeout: 5000 }).catch(() => fail('a 1 MiB + 1 file was not refused'));
+  const refused = await page.textContent('#status');
+  if (!/up to 1 MiB/.test(refused)) fail('the refusal does not say why: ' + refused);
+}
+
+// A cell that runs past the time limit is stopped as the kernel stops it,
+// and the next run gets a fresh runtime.
+async function limitChecks() {
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => fail('limit page error: ' + e.message));
+  await page.goto(new URL('?cell-limit=2', url).href);
+  await waitDone(page);
+  await openFile(page, 'loop.md', '```go\nx := 1\n```\n```go\nfor {\n}\n```\n');
+  await page.waitForSelector(DONE, { timeout: 60000 });
+  const cells = await codeState(page);
+  console.log('time limit: ' + cells[1].out);
+  if (!cells[1].out.includes('stopped: the cell ran longer than 2s, the limit; its worker was killed')) fail('an endless loop was not stopped: ' + JSON.stringify(cells));
+  await openFile(page, 'after.md', '```go\n1 + 1\n```\n');
+  await waitDone(page);
+  const after = await codeState(page);
+  if (after[0].out !== '2') fail('the run after the time limit: ' + JSON.stringify(after));
+  await page.close();
+}
+
 try {
   await carouselChecks();
   const page = await browser.newPage();
@@ -299,7 +443,7 @@ try {
       }
     }
     const r = await page.evaluate(() => {
-      const cells = [...document.querySelectorAll('#notebook .cell')];
+      const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
       return {
         cells: cells.length,
         withResult: cells.filter((c) => c.querySelector('.meta').textContent !== '' && !c.classList.contains('stale')).length,
@@ -319,13 +463,16 @@ try {
     const badges = await page.evaluate((n) => {
       const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
       const want = ex.cells.filter((c) => c.kind === 'code').map((c) => ({ go: 'Go', ruby: 'Ruby' })[c.lang || 'go']);
-      const cells = [...document.querySelectorAll('#notebook .cell')];
+      const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
       return {
         want,
         got: cells.map((c) => {
           const b = c.querySelector('.lang-badge');
           const ta = c.querySelector('textarea');
-          return b && { text: b.textContent, runnable: b.dataset.runnable, label: ta.getAttribute('aria-label'), described: ta.getAttribute('aria-describedby') === b.id, visible: b.getBoundingClientRect().width > 0 };
+          // the badge is the language control: its chosen option, then the status
+          const sel = b && b.querySelector('select');
+          const text = b && (sel ? sel.selectedOptions[0].text + b.querySelector('.lang-status').textContent : b.textContent);
+          return b && { text, runnable: b.dataset.runnable, label: ta.getAttribute('aria-label'), described: ta.getAttribute('aria-describedby') === b.id, visible: b.getBoundingClientRect().width > 0 };
         }),
       };
     }, name);
@@ -335,6 +482,23 @@ try {
       if (!b || b.text !== w || b.runnable !== 'yes' || b.label !== w + ' cell' || !b.described || !b.visible)
         fail(`${name}: cell ${i} should show the badge "${w}": ${JSON.stringify(b)}`);
     });
+    // Download gives the notebook back byte for byte, as the site serves it.
+    const file = await (await page.request.get(new URL(`notebooks/${name}.md`, page.url()).href)).body();
+    const got = await downloadBytes(page);
+    if (!got.equals(file)) fail(`${name}: Download is not the notebook byte for byte (${got.length} bytes, the file ${file.length})`);
+    // Running one cell runs the cells above it, never more: not slower than
+    // running them all.
+    if (i === 0) {
+      const one = [];
+      const all = [];
+      for (let k = 0; k < 3; k++) {
+        one.push(await ranMs(page, () => page.locator(CODE_CELLS).first().locator('.actions button', { hasText: 'Run' }).click()));
+        all.push(await ranMs(page, () => page.click('#run')));
+      }
+      const med = (xs) => [...xs].sort((a, b) => a - b)[1];
+      console.log(`${name}: run the first cell ${med(one)} ms, run all ${med(all)} ms (medians of 3)`);
+      if (med(one) > med(all) * 1.2 + 5) fail(`${name}: running one cell (${med(one)} ms) is slower than running all (${med(all)} ms)`);
+    }
   }
   // A notebook a visitor opens runs with no bridge to the page's JavaScript.
   await page.evaluate(() => (document.body.dataset.state = 'switching'));
@@ -359,7 +523,7 @@ try {
   await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
   const langs = await page.evaluate(() => ({
     prose: [...document.querySelectorAll('#notebook .prose .lang-badge')].map((b) => b.textContent),
-    cells: [...document.querySelectorAll('#notebook .cell .lang-badge')].map((b) => b.textContent),
+    cells: [...document.querySelectorAll('#notebook .cell[data-lang] .cell-head select')].map((s) => s.selectedOptions[0].text),
     injected: document.querySelectorAll('#notebook img').length,
   }));
   console.log('other fences: ' + langs.prose.join(' | ') + '; cells: ' + langs.cells.join(' | '));
@@ -379,10 +543,11 @@ try {
   });
   await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
   const jl = await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('#notebook .cell')];
+    const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
     return cells.map((c) => {
-      const b = c.querySelector('.lang-badge');
-      return { badge: b.textContent, runnable: b.dataset.runnable, out: c.querySelector('.outputs').textContent };
+      const b = c.querySelector('.cell-head .lang-badge');
+      const text = b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent;
+      return { badge: text, runnable: b.dataset.runnable, out: c.querySelector('.outputs').textContent };
     });
   });
   console.log(`julia: ${Date.now() - tj} ms; ` + jl.map((c) => `${c.badge} [${c.out}]`).join(' | '));
@@ -393,6 +558,9 @@ try {
     if (!jl[1].out.includes('blocked: it depends on cell 0, a Julia cell')) fail('the cell reading the Julia cell: ' + JSON.stringify(jl[1]));
     if (!jl[2].out.includes('42')) fail('the independent cell: ' + JSON.stringify(jl[2]));
   }
+
+  await editingChecks(page);
+  await limitChecks();
 } finally {
   await browser.close();
   if (server) server.close();

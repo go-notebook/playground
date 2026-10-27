@@ -86,12 +86,24 @@ func Cells(markdown string) []Cell {
 // Run runs every code cell of a notebook in order and returns what each one
 // did. A cell that fails stops the run: the cells after it are skipped, as
 // their inputs may not be there.
-func Run(markdown string) []Result {
+func Run(markdown string) []Result { return RunUpTo(markdown, -1, nil) }
+
+// RunUpTo runs the code cells of a notebook in order, up to the code cell
+// last (counted among code cells, from 0) or every one when last is
+// negative, and returns what each of those did. The playground keeps no
+// values between runs and has no dependency graph to run a cell's
+// dependents alone, so running one cell runs the cells above it first.
+// started, when not nil, is called with each code cell's index as it starts:
+// the page's time limit counts from there.
+func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 	var cells []format.Cell
 	for _, c := range format.Parse(markdown).Cells {
 		if c.Kind == format.Code {
 			cells = append(cells, c)
 		}
+	}
+	if last >= 0 && last < len(cells) {
+		cells = cells[:last+1]
 	}
 	s := newSession()
 	out := make([]Result, len(cells))
@@ -112,6 +124,9 @@ func Run(markdown string) []Result {
 		if j, ok := blocked[i]; ok {
 			out[i].Error = analysis.JuliaBlocked(j)
 			continue
+		}
+		if started != nil {
+			started(i)
 		}
 		start := time.Now()
 		if c.Lang == analysis.Ruby {

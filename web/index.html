@@ -18,8 +18,9 @@
 </header>
 <main>
   <div class="tools">
-    <button id="run" type="button" disabled title="Run every cell (Ctrl+Enter or ⌘+Enter in a cell)">Run</button>
+    <button id="run" type="button" disabled title="Run every cell">Run all</button>
     <button id="stop" type="button" hidden>Stop</button>
+    <button id="undo" type="button" hidden title="Bring back the deleted cell (Z on a selected cell)">Undo delete</button>
     <button id="reset" type="button" title="Back to the example as published">Reset</button>
     <button id="download" type="button" title="Save the notebook as Markdown">Download .md</button>
     <label class="open">Open .md<input id="open" type="file" accept=".md,text/markdown"></label>
@@ -29,7 +30,10 @@
   <div id="loading">{{.Carousel}}</div>
 </main>
 <footer>
-  <p>Each <code>```go</code> block of the Markdown is a cell; what a cell defines, the cells after it see.
+  <p>Each <code>```go</code> or <code>```ruby</code> block of the Markdown is a cell; what a cell defines, the cells after it see.
+  Edit a cell by typing in it; <kbd>Shift</kbd>+<kbd>Enter</kbd> runs it (and the cells above it) and moves on, <kbd>Esc</kbd> selects the cell.
+  On a selected cell, Jupyter's keys: <kbd>Enter</kbd> edit, <kbd>A</kbd>/<kbd>B</kbd> add above/below, <kbd>M</kbd> Markdown, <kbd>Y</kbd> code, <kbd>D</kbd> <kbd>D</kbd> delete, <kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> move.
+  Each cell's buttons do the same; a cell runs for at most 30 s.
   The cells are Go, interpreted by <a href="https://github.com/traefik/yaegi">yaegi</a> in WebAssembly in this tab — no server.
   Calls into {{.Libraries}} run compiled.
   <a href="https://github.com/go-notebook/playground#what-works">What works, and what does not.</a></p>

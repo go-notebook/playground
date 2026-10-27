@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -104,6 +105,31 @@ func TestCarouselErrors(t *testing.T) {
 		if _, err := carousel(t.TempDir(), "#000"); err == nil || !strings.Contains(err.Error(), `the picture of "Cells": the cell shows nothing`) {
 			t.Errorf("%+v: %v", rs, err)
 		}
+	}
+}
+
+// A notebook larger than the page edits is refused before anything is
+// written; the page carries each example's Markdown, as written.
+func TestNotebookSize(t *testing.T) {
+	log := quiet(t)
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
+	big := filepath.Join(t.TempDir(), "big.md")
+	if err := os.WriteFile(big, []byte(strings.Repeat("a", engine.MaxNotebook+1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if err := runTo(log, "-o", out, big); err == nil || !strings.Contains(err.Error(), "the page edits notebooks up to") {
+		t.Errorf("err = %v", err)
+	}
+	nb := examples(t)[1]
+	if err := runTo(log, "-o", out, nb); err != nil {
+		t.Fatal(err)
+	}
+	src, _ := os.ReadFile(nb)
+	page, _ := os.ReadFile(filepath.Join(out, "index.html"))
+	want, _ := json.Marshal(string(src))
+	if !strings.Contains(string(page), `"markdown":`+string(want)) {
+		t.Error("the page does not carry the notebook's Markdown as written")
 	}
 }
 
