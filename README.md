@@ -36,6 +36,10 @@ The page follows the fleet's N3 web doctrine: HTML, CSS and about 15 KB of JavaS
 - **[internal/yaegi](internal/yaegi/)** — yaegi v0.16.1's interpreter with three fixes the playground needs; [its README](internal/yaegi/README.md) lists them.
 - **[cmd/build](cmd/build/)** — writes a deployable directory from a set of notebooks. It first **runs every notebook natively and fails if a cell fails**, then builds the WebAssembly core from source (`GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w"`), copies Go's `wasm_exec.js` and writes the page with the notebooks in it.
 
+### Each cell says its language
+
+Above each cell, a badge says which language runs it, **Go** or **Ruby**. The badge is text, not a colour, and it is the cell's description for a screen reader. The language comes from the fence's info string (` ```go `, ` ```ruby `), as go-notebook's `format` package reads it, never from the code. While the runtime that runs the cell is not ready, the badge says so: *Go · loading the runtime…*, *Ruby · loading the Ruby runtime…*. It says *cannot run: the runtime did not start* if the runtime failed. A fenced block in any other language (` ```python `) is not a cell. It stays prose, shown as text under a badge that says *python · not run: shown as text*. The editor is a plain `<textarea>` with no syntax highlighting, so the badge is how a cell shows its language. `web/test/page.mjs` checks every example's badges, their wording before the runtime is ready, other fences, and their fit at 360 px.
+
 ### While it loads
 
 The Go core is 7.6 MB on the wire, the Ruby core about 12.7 MB. While the first one downloads, the page shows what go-notebook does: the [landing kit](https://github.com/go-fleettools/landingkit)'s loading carousel, the same component as the go-slides playground's, rendered by `cmd/build` with `landingkit.LoadingCarousel` (the kit executes its own Hugo partial, so nothing is copied here).
@@ -70,7 +74,7 @@ A site keeps its notebooks and a small Go module that pins the playground:
 
 ```
 playground/
-  go.mod          require github.com/go-notebook/playground v0.3.0
+  go.mod          require github.com/go-notebook/playground v0.4.0
   tools.go        //go:build tools — import _ "github.com/go-notebook/playground/cmd/build"
   notebooks/*.md
 ```
@@ -78,10 +82,10 @@ playground/
 To pin or bump the version, `go get` **the package**, not the module:
 
 ```sh
-cd playground && go get github.com/go-notebook/playground/cmd/build@v0.3.0
+cd playground && go get github.com/go-notebook/playground/cmd/build@v0.4.0
 ```
 
-`go get github.com/go-notebook/playground@v0.3.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
+`go get github.com/go-notebook/playground@v0.4.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
 
 and its deploy workflow builds the page into the site, from that pinned version:
 

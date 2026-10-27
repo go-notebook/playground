@@ -106,6 +106,11 @@ async function carouselChecks() {
     }
     await page.waitForSelector('#lk-carousel:not([hidden])', { timeout: HOLD }).catch(() => fail('cold load: the carousel did not show while the core downloaded'));
     await watchFade(page);
+    // While the core is held back, every cell's badge says it cannot run yet.
+    const waiting = await page.$$eval('#notebook .cell .lang-badge', (bs) => bs.map((b) => [b.dataset.runnable, b.textContent]));
+    console.log('badges while the core downloads: ' + [...new Set(waiting.map((w) => w[1]))].join(' | '));
+    if (!waiting.length || !waiting.every(([r, t]) => r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime)$/.test(t)))
+      fail('a badge does not say its cell cannot run yet: ' + JSON.stringify(waiting));
     const label = await page.$eval('#lk-carousel', (s) => s.getAttribute('aria-label'));
     const n = await page.$$eval('#lk-carousel .lk-car-card', (cs) => cs.length);
     console.log(`carousel: "${label}", ${n} cards, shown on a cold load`);
@@ -196,7 +201,8 @@ async function carouselChecks() {
 
   // 4. Reduced motion: shown, but stopped from the start (live slides), never
   // rotated, and gone at once, without the fade.
-  const rctx = await browser.newContext({ reducedMotion: 'reduce' });
+  // (At a phone's width, which the badges must fit too.)
+  const rctx = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 360, height: 740 } });
   try {
     await holdCore(rctx);
     const page = await open(rctx, 'reduced motion');
@@ -210,6 +216,12 @@ async function carouselChecks() {
     console.log(`carousel: reduced motion, rotated ${st.advanced} times, faded ${await page.evaluate(() => window.carouselFaded)}`);
     if (st.advanced !== 0) fail('reduced motion: the carousel rotated');
     if (await page.evaluate(() => window.carouselFaded)) fail('reduced motion: the carousel faded');
+    const fit = await page.evaluate(() => ({
+      over: [...document.querySelectorAll('.lang-badge')].filter((b) => b.getBoundingClientRect().right > document.documentElement.clientWidth).length,
+      badges: document.querySelectorAll('.lang-badge').length,
+      scroll: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    }));
+    if (!fit.badges || fit.over || fit.scroll) fail('at 360 px, the badges do not fit: ' + JSON.stringify(fit));
   } finally {
     await rctx.close();
   }
@@ -302,6 +314,27 @@ try {
     if (r.withResult !== r.cells) fail(`${name}: ${r.cells - r.withResult} cells without a result`);
     if (r.errors.length) fail(`${name}: ${r.errors.join('; ')}`);
     if (r.figures !== r.svgFigures) fail(`${name}: a figure is not an <svg>`);
+    // Each cell's badge names the language of its fence, in text, for
+    // screen readers too, and says nothing more once it can run.
+    const badges = await page.evaluate((n) => {
+      const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
+      const want = ex.cells.filter((c) => c.kind === 'code').map((c) => ({ go: 'Go', ruby: 'Ruby' })[c.lang || 'go']);
+      const cells = [...document.querySelectorAll('#notebook .cell')];
+      return {
+        want,
+        got: cells.map((c) => {
+          const b = c.querySelector('.lang-badge');
+          const ta = c.querySelector('textarea');
+          return b && { text: b.textContent, runnable: b.dataset.runnable, label: ta.getAttribute('aria-label'), described: ta.getAttribute('aria-describedby') === b.id, visible: b.getBoundingClientRect().width > 0 };
+        }),
+      };
+    }, name);
+    console.log(`${name}: badges ${badges.got.map((b) => (b ? b.text : 'none')).join(', ')}`);
+    badges.want.forEach((w, i) => {
+      const b = badges.got[i];
+      if (!b || b.text !== w || b.runnable !== 'yes' || b.label !== w + ' cell' || !b.described || !b.visible)
+        fail(`${name}: cell ${i} should show the badge "${w}": ${JSON.stringify(b)}`);
+    });
   }
   // A notebook a visitor opens runs with no bridge to the page's JavaScript.
   await page.evaluate(() => (document.body.dataset.state = 'switching'));
@@ -314,6 +347,26 @@ try {
   const probe = await page.$eval('#notebook .cell .output', (e) => e.textContent).catch(() => '');
   console.log('probe:', probe);
   if (!/^\["nil", "Errno::/.test(probe)) fail('a Ruby cell reaches the page or the files: ' + probe);
+
+  // A fence in a language that is not a cell's stays prose, and its badge
+  // says it does not run; a hostile word is text.
+  await page.evaluate(() => (document.body.dataset.state = 'switching'));
+  await page.setInputFiles('#open', {
+    name: 'langs.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# langs\n\n```python\nprint(1)\n```\n\n```__proto__\nx\n```\n\n```<img/src/onerror=alert(1)>\ny\n```\n\n```go\n1 + 1\n```\n'),
+  });
+  await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
+  const langs = await page.evaluate(() => ({
+    prose: [...document.querySelectorAll('#notebook .prose .lang-badge')].map((b) => b.textContent),
+    cells: [...document.querySelectorAll('#notebook .cell .lang-badge')].map((b) => b.textContent),
+    injected: document.querySelectorAll('#notebook img').length,
+  }));
+  console.log('other fences: ' + langs.prose.join(' | ') + '; cells: ' + langs.cells.join(' | '));
+  if (langs.prose[0] !== 'python · not run: shown as text' || langs.prose[1] !== '__proto__ · not run: shown as text' || langs.prose.length !== 3)
+    fail('a fence in another language does not say it is not run: ' + JSON.stringify(langs.prose));
+  if (langs.injected) fail('a fence\'s info string became markup');
+  if (langs.cells.join() !== 'Go') fail('the Go cell after them: ' + JSON.stringify(langs.cells));
 } finally {
   await browser.close();
   if (server) server.close();
