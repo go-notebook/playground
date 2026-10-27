@@ -64,7 +64,7 @@ type Result struct {
 type Cell struct {
 	// Kind is "prose" (Markdown) or "code".
 	Kind string `json:"kind"`
-	// Lang is a code cell's language: "go" or "ruby".
+	// Lang is a code cell's language: "go", "ruby" or "julia".
 	Lang string `json:"lang,omitempty"`
 	// Source is the cell's text, without the fences of a code cell.
 	Source string `json:"source"`
@@ -95,11 +95,22 @@ func Run(markdown string) []Result {
 	}
 	s := newSession()
 	out := make([]Result, len(cells))
+	blocked := juliaBlocked(cells)
 	failed := false
 	for i, c := range cells {
 		out[i] = Result{Cell: i, Line: c.Line}
 		if failed {
 			out[i].Skipped = true
+			continue
+		}
+		// A Julia cell is checked, never run, and so are the cells that read
+		// it: each says why, and the others run.
+		if c.Lang == analysis.Julia {
+			out[i].Error = juliaCell(c.Source)
+			continue
+		}
+		if j, ok := blocked[i]; ok {
+			out[i].Error = analysis.JuliaBlocked(j)
 			continue
 		}
 		start := time.Now()

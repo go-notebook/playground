@@ -101,21 +101,26 @@
     startWorker();
   }
 
-  // ensureEngine switches to the Ruby core when the cells hold a Ruby cell,
-  // once: a visitor who runs only Go never downloads it. It reports whether
-  // they do.
+  // needsRubyCore reports whether cells need the second core: it runs Ruby
+  // cells, and checks Julia cells (it has go-embedded-julia's parser, which
+  // the default core leaves out).
+  const needsRubyCore = (cells) => cells.some((c) => c.kind === 'code' && (c.lang === 'ruby' || c.lang === 'julia'));
+
+  // ensureEngine switches to the Ruby core when the cells hold a Ruby or a
+  // Julia cell, once: a visitor who runs only Go never downloads it. It
+  // reports whether they do.
   function ensureEngine(cells) {
-    const hasRuby = cells.some((c) => c.kind === 'code' && c.lang === 'ruby');
-    if (hasRuby && engine !== 'ruby') {
+    const needed = needsRubyCore(cells);
+    if (needed && engine !== 'ruby') {
       engine = 'ruby';
       worker.terminate();
       for (const p of pending.values()) p.reject(new Error('stopped'));
       pending.clear();
       queue = [];
       startWorker();
-      setStatus('Loading the Ruby runtime…');
+      setStatus(cells.some((c) => c.kind === 'code' && c.lang === 'ruby') ? 'Loading the Ruby runtime…' : 'Loading the Julia parser…');
     }
-    return hasRuby;
+    return needed;
   }
 
   // ---- Language badges --------------------------------------------------
@@ -128,6 +133,9 @@
   const langName = (l) => (Object.hasOwn(LANGS, l) ? LANGS[l] : l); // "__proto__" is a word too
   let fatal = null;
   function langStatus(lang) {
+    // Julia cells are parsed and checked, never run: go-embedded-julia has no
+    // runtime yet (its milestone M3).
+    if (lang === 'julia') return 'not runnable yet';
     if (lang !== 'go' && lang !== 'ruby') return 'not run in this playground';
     if (fatal) return 'cannot run: the runtime did not start';
     if (lang === 'ruby' && engine !== 'ruby') return 'waits for the Ruby runtime';
@@ -156,7 +164,7 @@
     if (nb && nb.example) edited.set(nb.example, nb.cells.map((c) => ({ kind: c.kind, lang: c.lang, source: c.source })));
     nb = { name, example: examples.some((x) => x.name === name) ? name : null, title, cells };
     if (worker) ensureEngine(cells);
-    else if (cells.some((c) => c.kind === 'code' && c.lang === 'ruby')) engine = 'ruby';
+    else if (needsRubyCore(cells)) engine = 'ruby';
     render();
     for (const a of $('examples').querySelectorAll('a')) {
       if (a.dataset.name === name) a.setAttribute('aria-current', 'page');

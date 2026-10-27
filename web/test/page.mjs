@@ -367,6 +367,32 @@ try {
     fail('a fence in another language does not say it is not run: ' + JSON.stringify(langs.prose));
   if (langs.injected) fail('a fence\'s info string became markup');
   if (langs.cells.join() !== 'Go') fail('the Go cell after them: ' + JSON.stringify(langs.cells));
+
+  // A Julia cell is checked, not run: its badge says so, the cell that reads
+  // it is blocked, the other runs; the core with the Julia parser is loaded.
+  await page.evaluate(() => (document.body.dataset.state = 'switching'));
+  const tj = Date.now();
+  await page.setInputFiles('#open', {
+    name: 'julia.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# julia\n\n```julia\ntotal = sum(1:10)\n```\n\n```go\ntotal + 1\n```\n\n```go\n2 * 21\n```\n'),
+  });
+  await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
+  const jl = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#notebook .cell')];
+    return cells.map((c) => {
+      const b = c.querySelector('.lang-badge');
+      return { badge: b.textContent, runnable: b.dataset.runnable, out: c.querySelector('.outputs').textContent };
+    });
+  });
+  console.log(`julia: ${Date.now() - tj} ms; ` + jl.map((c) => `${c.badge} [${c.out}]`).join(' | '));
+  if (jl.length !== 3) fail('julia: ' + JSON.stringify(jl));
+  else {
+    if (jl[0].badge !== 'Julia · not runnable yet' || jl[0].runnable !== 'no' || !jl[0].out.includes('Julia cells are parsed and checked, but not run yet'))
+      fail('the Julia cell: ' + JSON.stringify(jl[0]));
+    if (!jl[1].out.includes('blocked: it depends on cell 0, a Julia cell')) fail('the cell reading the Julia cell: ' + JSON.stringify(jl[1]));
+    if (!jl[2].out.includes('42')) fail('the independent cell: ' + JSON.stringify(jl[2]));
+  }
 } finally {
   await browser.close();
   if (server) server.close();
