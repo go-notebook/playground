@@ -164,9 +164,10 @@
   const LANGS = { go: 'Go', ruby: 'Ruby', julia: 'Julia', markdown: 'Markdown' };
   const langName = (l) => (Object.hasOwn(LANGS, l) ? LANGS[l] : l); // "__proto__" is a word too
   // The kinds a cell can be here: the languages this build knows, and prose.
-  // A Julia cell is parsed and checked, not run, and the + menu says so.
+  // A Julia cell is parsed and checked, not run, and the + menu and the
+  // language menu say so, in the badge's own words.
   const KINDS = ['go', 'ruby', 'julia', 'markdown'];
-  const kindLabel = (k) => (k === 'julia' ? 'Julia (parse and check only)' : langName(k));
+  const kindLabel = (k) => (k === 'julia' ? 'Julia · not runnable yet' : langName(k));
   let fatal = null;
   function langStatus(lang) {
     // Julia cells are parsed and checked, never run: go-embedded-julia has no
@@ -414,7 +415,9 @@
     const select = document.createElement('select');
     select.className = 'lang-select';
     select.setAttribute('aria-label', `Language of cell ${i + 1}`);
-    for (const k of KINDS) select.add(new Option(langName(k), k, false, k === kind));
+    // the current language by its name (its status follows), the others as
+    // the + menu offers them
+    for (const k of KINDS) select.add(new Option(k === kind ? langName(k) : kindLabel(k), k, false, k === kind));
     if (!KINDS.includes(kind)) select.add(new Option(langName(kind), kind, true, true));
     select.addEventListener('change', () => changeLang(i, select.value));
     const st = document.createElement('span');

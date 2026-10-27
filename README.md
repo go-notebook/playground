@@ -47,7 +47,7 @@ The model follows Jupyter's gestures (Notebook 7 / JupyterLab). Its languages ar
   - **▶ Run** on a cell, Shift+Enter (then on to the next cell) or Ctrl/⌘+Enter (stay) runs that cell. The playground keeps no values between runs and has no dependency graph, so running a cell **runs every cell above it too**, never the cells below; those keep their results, greyed as stale.
   - **Run all** runs the whole notebook.
   - Running the first cell of an example takes no longer than Run all (`page.mjs` measures both).
-- **Add a cell**: **+ Add cell**, between cells and at the end, offers Go, Ruby, *Julia (parse and check only)* or Markdown. The language of the code cell above comes first, marked *(as above)*. Keys on a selected cell: A adds above, B adds below, Alt+Enter runs and adds below.
+- **Add a cell**: **+ Add cell**, between cells and at the end, offers Go, Ruby, *Julia · not runnable yet* or Markdown. The language of the code cell above comes first, marked *(as above)*. Keys on a selected cell: A adds above, B adds below, Alt+Enter runs and adds below.
 - **Change a cell's language**: the language badge is the cell's own `<select>`. A change rewrites only the first word of the fence's info string. The text is not translated, and the cell says so. Then the cell runs again. Keys: M makes it Markdown, Y makes it code.
 - **Delete, undo, move**: each cell's buttons, or D D, Z, and Ctrl+Shift+↑/↓. A delete is undone with **Undo delete** or Z rather than asked about. On a narrow screen the buttons fold behind **⋯**; on a touch screen they are always shown.
 - **Open .md** reads a local file with the same rules. Files over 1 MiB are refused, with a message.
@@ -109,7 +109,7 @@ A site keeps its notebooks and a small Go module that pins the playground:
 
 ```
 playground/
-  go.mod          require github.com/go-notebook/playground v0.5.0
+  go.mod          require github.com/go-notebook/playground v0.6.0
   tools.go        //go:build tools — import _ "github.com/go-notebook/playground/cmd/build"
   notebooks/*.md
 ```
@@ -117,10 +117,10 @@ playground/
 To pin or bump the version, `go get` **the package**, not the module:
 
 ```sh
-cd playground && go get github.com/go-notebook/playground/cmd/build@v0.5.0
+cd playground && go get github.com/go-notebook/playground/cmd/build@v0.6.0
 ```
 
-`go get github.com/go-notebook/playground@v0.5.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
+`go get github.com/go-notebook/playground@v0.6.0` updates `go.mod` but records in `go.sum` only what the module's own packages need, not what `cmd/build` imports. Since v0.3.0 that includes the landing kit (`github.com/go-fleettools/landingkit`, for the loading carousel), and the deploy then fails with `missing go.sum entry for module providing package github.com/go-fleettools/landingkit`. Getting the package records the sums of everything `go run …/cmd/build` compiles. `go mod tidy` does the same, because `tools.go` imports the package.
 
 and its deploy workflow builds the page into the site, from that pinned version:
 

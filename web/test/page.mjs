@@ -288,7 +288,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),Ruby,Julia (parse and check only),Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),Ruby,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;
@@ -311,6 +311,7 @@ async function editingChecks(page) {
   cells = await codeState(page);
   console.log('after Ruby -> Go: ' + JSON.stringify(cells));
   if (cells[1].lang !== 'go' || cells[1].out !== '42' || !/not translated/.test(cells[1].note)) fail('Ruby -> Go: ' + JSON.stringify(cells));
+
 
   // D D deletes the selected cell, Z brings it back
   await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
@@ -344,6 +345,28 @@ async function editingChecks(page) {
   const again = (await downloadBytes(page)).toString();
   console.log('round trip: ' + (again === moved ? 'byte for byte' : 'DIFFERS'));
   if (again !== moved) fail('download, open, download changed the file: ' + JSON.stringify(again));
+
+  // A cell switched to Julia is checked, not run, and the cell that reads it
+  // is blocked, as a ```julia cell is; switched back, it is Go again. (x = 21
+  // is Julia, and not Go: the text is never translated.)
+  await openFile(page, 'jl.md', '```go\nx = 21\n```\n```go\nx * 2\n```\n');
+  await waitDone(page);
+  await settle(page);
+  await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('julia');
+  await waitDone(page);
+  await settle(page);
+  await page.click('#run');
+  await waitDone(page);
+  cells = await codeState(page);
+  console.log('after Go -> Julia: ' + JSON.stringify(cells.map((c) => [c.lang, c.out.slice(0, 50)])));
+  const jbadge = await page.$eval(CODE_BADGES, (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
+  if (cells[0].lang !== 'julia' || jbadge !== 'Julia · not runnable yet' || !cells[0].out.includes('not run yet') || !cells[1].out.includes('blocked: it depends on cell 0, a Julia cell'))
+    fail('Go -> Julia: ' + jbadge + ' ' + JSON.stringify(cells));
+  if ((await downloadBytes(page)).toString() !== '```julia\nx = 21\n```\n```go\nx * 2\n```\n') fail('the Julia fence is not in the file');
+  await settle(page);
+  await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('go');
+  await waitDone(page);
+  if ((await downloadBytes(page)).toString() !== '```go\nx = 21\n```\n```go\nx * 2\n```\n') fail('Julia -> Go did not give the file back');
 
   // Open refuses a file over 1 MiB, and says so
   await openFile(page, 'big.md', Buffer.alloc((1 << 20) + 1, 0x61));
