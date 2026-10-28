@@ -78,7 +78,7 @@ jobs:
           go-version: '1.27.3'
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
       - name: Build both playgrounds
         run: |
           go run ./cmd/build -o site/statistics --org go-statistics examples/statistics/*.md
