@@ -103,6 +103,8 @@ jobs:
         run: go test -run '^$' -fuzz FuzzSplit -fuzztime 60s ./engine
       - name: Fuzz the SVG sanitizer for 60 s
         run: go test -run '^$' -fuzz FuzzSanitizeSVG -fuzztime 60s ./engine
+      - name: Fuzz the edits (the Markdown round trip) for 60 s
+        run: go test -run '^$' -fuzz FuzzEdit -fuzztime 60s ./engine
 
   arch-native:
     name: arch arm64

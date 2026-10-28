@@ -185,6 +185,9 @@ type example struct {
 	Name  string        `json:"name"`
 	Title string        `json:"title"`
 	Cells []engine.Cell `json:"cells"`
+	// Markdown is the notebook as written: what the page edits through the
+	// format package, and what Download gives back byte for byte.
+	Markdown string `json:"markdown"`
 }
 
 func build(c config) error {
@@ -207,7 +210,10 @@ func build(c config) error {
 			return fmt.Errorf("%s does not run", path)
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".md")
-		exs = append(exs, example{Name: name, Title: title(string(src), name), Cells: engine.Cells(string(src))})
+		if len(src) > engine.MaxNotebook {
+			return fmt.Errorf("%s is %d bytes; the page edits notebooks up to %d", path, len(src), engine.MaxNotebook)
+		}
+		exs = append(exs, example{Name: name, Title: title(string(src), name), Cells: engine.Cells(string(src)), Markdown: string(src)})
 	}
 
 	if err := os.MkdirAll(filepath.Join(c.out, "notebooks"), 0o755); err != nil {

@@ -1,7 +1,8 @@
 // The playground's Go core, in a worker so that a long run never freezes the
-// page and Stop can end it. Messages in: {id, op: "run" | "parse",
-// markdown}; out: {type: "ready"}, {type: "result", id, json, ms},
-// {type: "error", id, error}, {type: "fatal", error}.
+// page and Stop (or the time limit) can end it. Messages in: {id, op: "run"
+// | "parse" | "edit", markdown, last?, ops?}; out: {type: "ready"},
+// {type: "started", id, cell}, {type: "result", id, json, ms},
+// {type: "error", id, error}, {type: "fatal", error}, {type: "downloaded"}.
 'use strict';
 
 importScripts('wasm_exec.js');
@@ -40,11 +41,21 @@ function watched(response) {
   go.run(result.instance);
 })().catch((e) => postMessage({ type: 'fatal', error: String(e) }));
 
+// The core says when each cell starts, for the page's time limit.
+let current = 0;
+self.playgroundStarted = (cell) => postMessage({ type: 'started', id: current, cell });
+
 onmessage = (e) => {
-  const { id, op, markdown } = e.data;
+  const { id, op, markdown, last, ops } = e.data;
+  current = id;
   try {
     const t = performance.now();
-    const json = op === 'parse' ? self.playgroundCells(markdown) : self.playgroundRun(markdown);
+    const json =
+      op === 'parse'
+        ? self.playgroundCells(markdown)
+        : op === 'edit'
+          ? self.playgroundEdit(markdown, JSON.stringify(ops))
+          : self.playgroundRun(markdown, typeof last === 'number' ? last : -1);
     postMessage({ type: 'result', id, json, ms: performance.now() - t });
   } catch (err) {
     postMessage({ type: 'error', id, error: String(err) });
