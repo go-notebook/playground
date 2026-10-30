@@ -25,8 +25,8 @@ const JuliaSupported = false
 
 // juliaCell is what the default core says of a Julia cell; the page never
 // sends it one.
-func juliaCell(string) string {
-	return "this build checks no Julia cells (in the page, the core with the Julia parser is loaded for a notebook with Julia cells)"
+func juliaCell(string) (string, bool) {
+	return "this build checks no Julia cells (in the page, the core with the Julia parser is loaded for a notebook with Julia cells)", false
 }
 
 // juliaBlocked finds nothing to block without the Julia analysis.

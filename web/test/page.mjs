@@ -112,7 +112,7 @@ async function carouselChecks() {
     // While the core is held back, every cell's badge says it cannot run yet.
     const waiting = await page.$$eval(CODE_BADGES, (bs) => bs.map((b) => [b.dataset.runnable, b.textContent]));
     console.log('badges while the core downloads: ' + [...new Set(waiting.map((w) => w[1]))].join(' | '));
-    if (!waiting.length || !waiting.every(([r, t]) => r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime)$/.test(t)))
+    if (!waiting.length || !waiting.every(([r, t]) => r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime|not runnable yet)$/.test(t)))
       fail('a badge does not say its cell cannot run yet: ' + JSON.stringify(waiting));
     const label = await page.$eval('#lk-carousel', (s) => s.getAttribute('aria-label'));
     const n = await page.$$eval('#lk-carousel .lk-car-card', (cs) => cs.length);
@@ -228,6 +228,41 @@ async function carouselChecks() {
   } finally {
     await rctx.close();
   }
+}
+
+// ---- The Julia example ----------------------------------------------------
+
+// juliaExampleChecks reads the open notebook, an example with Julia cells: its
+// Julia cells say they are checked and not run, in the neutral style and not as
+// a failure; a Go cell that reads one is blocked, also not a failure; a Go cell
+// that does not runs and shows a value; and the prose says plainly that Julia
+// is checked, not run, and links go-embedded-julia.
+async function juliaExampleChecks(page, name) {
+  const r = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
+    return {
+      cells: cells.map((c) => ({
+        lang: c.dataset.lang,
+        out: (c.querySelector('.outputs').textContent || '').trim(),
+        notRunStyle: c.querySelectorAll('.outputs .output.skipped').length,
+        failStyle: c.querySelectorAll('.outputs .output.error').length,
+      })),
+      prose: [...document.querySelectorAll('#notebook .prose')].map((p) => p.textContent).join('\n'),
+      links: [...document.querySelectorAll('#notebook .prose a')].map((a) => a.getAttribute('href')),
+    };
+  });
+  const julia = r.cells.filter((c) => c.lang === 'julia');
+  const blocked = r.cells.filter((c) => c.lang !== 'julia' && c.out.includes('blocked: it depends on cell'));
+  const alone = r.cells.filter((c) => c.lang !== 'julia' && c.out !== '' && !c.out.includes('blocked:') && !c.failStyle);
+  console.log(`${name}: Julia example: ${julia.length} Julia, ${blocked.length} blocked, ${alone.length} independent`);
+  if (!julia.length || julia.some((c) => !c.out.includes('Julia cells are parsed and checked, but not run yet') || !c.notRunStyle || c.failStyle))
+    fail(`${name}: a Julia cell should say it is checked, not run, and not look failed: ` + JSON.stringify(julia));
+  if (!blocked.length || blocked.some((c) => !c.notRunStyle || c.failStyle))
+    fail(`${name}: no Go cell is blocked on the Julia cell, or it looks failed: ` + JSON.stringify(r.cells));
+  if (!alone.length) fail(`${name}: no Go cell runs independently of the Julia cell: ` + JSON.stringify(r.cells));
+  if (!/checked, not run/.test(r.prose) || !r.links.includes('https://go-embedded-julia.github.io/'))
+    fail(`${name}: the prose should say Julia cells are checked, not run, and link go-embedded-julia.github.io`);
+  if (!/line 2:8: syntax error/.test(r.prose)) fail(`${name}: the prose should show a syntax error caught at its line`);
 }
 
 // ---- Editing --------------------------------------------------------------
@@ -450,7 +485,7 @@ try {
   for (const [i, name] of names.entries()) {
     const ruby = await page.evaluate((n) => {
       const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
-      return ex.cells.some((c) => c.lang === 'ruby');
+      return ex.cells.some((c) => c.lang === 'ruby' || c.lang === 'julia'); // either loads the Ruby core
     }, name);
     if (!ruby && rubyFetched && !seenRuby) fail(`${name}: the Ruby core was fetched for a notebook without Ruby`);
     if (i > 0) {
@@ -485,7 +520,7 @@ try {
     // screen readers too, and says nothing more once it can run.
     const badges = await page.evaluate((n) => {
       const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
-      const want = ex.cells.filter((c) => c.kind === 'code').map((c) => ({ go: 'Go', ruby: 'Ruby' })[c.lang || 'go']);
+      const want = ex.cells.filter((c) => c.kind === 'code').map((c) => ({ go: 'Go', ruby: 'Ruby', julia: 'Julia · not runnable yet' })[c.lang || 'go']);
       const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
       return {
         want,
@@ -502,9 +537,14 @@ try {
     console.log(`${name}: badges ${badges.got.map((b) => (b ? b.text : 'none')).join(', ')}`);
     badges.want.forEach((w, i) => {
       const b = badges.got[i];
-      if (!b || b.text !== w || b.runnable !== 'yes' || b.label !== w + ' cell' || !b.described || !b.visible)
+      // A Julia cell is checked, not run: its badge says "not runnable yet", and
+      // its accessible name is the language alone.
+      const julia = w.startsWith('Julia');
+      const lang = julia ? 'Julia' : w;
+      if (!b || b.text !== w || b.runnable !== (julia ? 'no' : 'yes') || b.label !== lang + ' cell' || !b.described || !b.visible)
         fail(`${name}: cell ${i} should show the badge "${w}": ${JSON.stringify(b)}`);
     });
+    if (badges.want.some((w) => w.startsWith('Julia'))) await juliaExampleChecks(page, name);
     // Download gives the notebook back byte for byte, as the site serves it.
     const file = await (await page.request.get(new URL(`notebooks/${name}.md`, page.url()).href)).body();
     const got = await downloadBytes(page);

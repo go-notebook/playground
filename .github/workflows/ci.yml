@@ -79,15 +79,17 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Build both playgrounds
+      - name: Build the playgrounds
         run: |
           go run ./cmd/build -o site/statistics --org go-statistics examples/statistics/*.md
           go run ./cmd/build -o site/numerics --org go-numerics examples/numerics/*.md
+          go run ./cmd/build -o site/notebook --org go-notebook examples/notebook/*.md
       - name: Install Playwright and Chromium
         working-directory: web/test
         run: npm install && npx playwright install --with-deps chromium
       - run: node web/test/page.mjs site/statistics
       - run: node web/test/page.mjs site/numerics
+      - run: node web/test/page.mjs site/notebook
 
   security:
     name: govulncheck + fuzz

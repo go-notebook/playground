@@ -30,9 +30,10 @@ func TestJuliaCells(t *testing.T) {
 		analysis.JuliaNotRun,
 		"",
 	}
+	status := []string{"", StatusNotRun, StatusBlocked, StatusBlocked, StatusBlocked, StatusNotRun, ""}
 	for i, w := range want {
-		if res[i].Error != w || res[i].Skipped {
-			t.Errorf("cell %d: %+v, want %q", i, res[i], w)
+		if res[i].Error != w || res[i].Skipped || res[i].Status != status[i] {
+			t.Errorf("cell %d: %+v, want %q (%q)", i, res[i], w, status[i])
 		}
 	}
 	if got := res[6].Display[0]["text/plain"]; got != "20" {
@@ -41,7 +42,7 @@ func TestJuliaCells(t *testing.T) {
 	// A syntax error, at its line and column in the cell; it does not stop
 	// the cells that do not read it.
 	res = Run("```julia\ny = 2\nx = (1,\n```\n```go\n1 + 1\n```\n")
-	if res[0].Error != "line 2:8: syntax error: Expected `)` or `,`" || res[1].Error != "" || res[1].Display[0]["text/plain"] != "2" {
+	if res[0].Error != "line 2:8: syntax error: Expected `)` or `,`" || res[0].Status != "" || res[1].Error != "" || res[1].Display[0]["text/plain"] != "2" {
 		t.Errorf("%+v", res)
 	}
 	if !JuliaSupported {

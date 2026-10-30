@@ -672,7 +672,7 @@
       results.forEach((r, i) => code[i] && show(code[i].el, r));
       if (timings.firstResult === null) timings.firstResult = performance.now();
       if (hasRuby && timings.firstRubyResult === null) timings.firstRubyResult = performance.now();
-      const failed = results.find((r) => r.error);
+      const failed = results.find((r) => r.error && !r.status);
       setStatus(
         (failed ? 'A cell failed. ' : '') +
           `Ran ${results.length} cell${results.length === 1 ? '' : 's'} in ${fmtMs(reply.ms)}.` +
@@ -733,7 +733,9 @@
       }
       el.out.append(pre(d['text/plain']));
     }
-    if (r.error) el.out.append(pre(r.error, 'error'));
+    // A Julia cell that is checked and not run, and a cell blocked on one,
+    // are not failures: the engine says so in status, in a neutral style.
+    if (r.error) el.out.append(pre(r.error, r.status === 'notrun' || r.status === 'blocked' ? 'skipped' : 'error'));
   }
 
   // svgNode parses a figure, without scripts, event handlers, animations,

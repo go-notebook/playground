@@ -96,7 +96,10 @@ func transcript(rs []Result) string {
 			}
 			fmt.Fprintf(&b, "-- show\n%s\n", d["text/plain"])
 		}
-		if r.Error != "" {
+		switch {
+		case r.Status != "":
+			fmt.Fprintf(&b, "-- %s\n%s\n", r.Status, r.Error)
+		case r.Error != "":
 			fmt.Fprintf(&b, "-- error\n%s\n", r.Error)
 		}
 	}
