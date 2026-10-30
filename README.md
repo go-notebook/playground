@@ -92,7 +92,8 @@ A ` ```julia ` cell is parsed and checked as in [go-notebook](https://github.com
 
 - Its badge reads *Julia · not runnable yet*.
 - A syntax error is shown at its line and column, with julia's message: ``line 2:8: syntax error: Expected `)` or `,` ``.
-- A cell without one fails with *Julia cells are parsed and checked, but not run yet: execution arrives with go-embedded-julia's runtime (milestone M3)*.
+- A cell without one is not run, by design, and says *Julia cells are parsed and checked, but not run yet: execution arrives with go-embedded-julia's runtime (milestone M3)*. The result carries a typed `status`: `notrun` for that cell, `blocked` for a cell that reads what a Julia cell defines. Neither is a failure: the page shows them in the neutral style, and `cmd/build` accepts them (`notrun` for a Julia cell only), so a site can publish a Julia example. A syntax error in a Julia cell, and any failure in a Go or Ruby cell, still fail the build.
+- The example: [`examples/notebook/4-julia.md`](examples/notebook/4-julia.md), the site's `#4-julia` notebook. A Julia cell, a Go cell blocked on it and a Go cell that runs alone; its prose says Julia cells are checked, not run, until [go-embedded-julia](https://go-embedded-julia.github.io/)'s runtime lands.
 - The cells that read what it defines are **blocked** and say so: in any language, directly or through other cells, by go-notebook's dependency graph. The other cells run.
 - **The parser is in the second core only.** It adds 1.0 MB to `playground-ruby.wasm` (0.28 MB gzipped, +2.2%), and nothing to `playground.wasm`, whose code never calls it, so the linker leaves it out. The page loads the second core for a notebook with a Julia cell, as for a Ruby one, and the status line says *Loading the Julia parser…*. `web/test/page.mjs` checks the badge, the blocked cell and the independent one.
 

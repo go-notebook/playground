@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/go-notebook/playground/engine"
 )
 
 // examples are this repository's statistics notebooks.
@@ -155,6 +157,81 @@ func TestFailingNotebook(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "bad.md:5: cell 1 failed:\nline 1: undefined: undefinedName") {
 		t.Errorf("log: %s", log)
+	}
+}
+
+// A Julia cell is checked and never run, which is not a failure; a mistake in
+// one is, and so is every real failure in the other languages.
+func TestJuliaNotebooks(t *testing.T) {
+	log := quiet(t)
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
+	dir := t.TempDir()
+	write := func(name, src string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	for _, tc := range []struct {
+		name, src, err, log string
+	}{
+		// The shipped example: a Julia cell, a Go cell blocked on it and a
+		// Go cell that runs alone.
+		{name: "example", src: mustRead(t, "../../examples/notebook/4-julia.md")},
+		{name: "ok", src: "```go\nn := 1\n```\n```julia\ntotal = n + 1\n```\n```go\nm := total\n```\n```go\nn * 2\n```\n"},
+		// A syntax error in a Julia cell, at its line and column, fails.
+		{name: "syntax", src: "```julia\ny = 2\nx = (1,\n```\n", err: "syntax.md does not run", log: "syntax.md:2: cell 0 failed:\nline 2:8: syntax error"},
+		// A real failure in Go, with or without Julia in the notebook.
+		{name: "gofail", src: "```julia\nx = 1\n```\n```go\nundefinedName\n```\n", err: "gofail.md does not run", log: "line 1: undefined: undefinedName"},
+		// A Go cell blocked on a Julia cell with a syntax error: the Julia
+		// cell fails, so the build does.
+		{name: "blockedsyntax", src: "```julia\nx = (1,\n```\n```go\ny := x\n```\n", err: "does not run", log: "syntax error"},
+	} {
+		log.Reset()
+		p := write(tc.name+".md", tc.src)
+		err := runTo(log, "-o", t.TempDir(), p)
+		switch {
+		case tc.err == "" && err != nil:
+			t.Errorf("%s: %v\n%s", tc.name, err, log)
+		case tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)):
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.err)
+		case !strings.Contains(log.String(), tc.log):
+			t.Errorf("%s: log %q lacks %q", tc.name, log, tc.log)
+		}
+	}
+}
+
+func mustRead(t *testing.T, path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// failed accepts a Julia cell's not-run outcome only for a Julia cell, and
+// the blocked outcome only for another language's cell.
+func TestFailed(t *testing.T) {
+	for _, tc := range []struct {
+		r    engine.Result
+		lang string
+		want bool
+	}{
+		{engine.Result{}, "go", false},
+		{engine.Result{Error: "boom"}, "go", true},
+		{engine.Result{Error: "boom"}, "julia", true},
+		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "julia", false},
+		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "go", true},
+		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "ruby", true},
+		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "go", false},
+		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "ruby", false},
+		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "julia", true},
+		{engine.Result{Error: "x", Status: "other"}, "go", true},
+	} {
+		if got := cellFailed(tc.r, tc.lang); got != tc.want {
+			t.Errorf("cellFailed(%+v, %q) = %v, want %v", tc.r, tc.lang, got, tc.want)
+		}
 	}
 }
 

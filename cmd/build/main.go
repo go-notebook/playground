@@ -10,7 +10,9 @@
 // so that the version it builds is the one go.mod pins. Before writing
 // anything it runs every notebook, natively, with the same engine the page
 // runs in WebAssembly, and fails if a cell fails: a site never publishes an
-// example that does not run.
+// example that does not run. A Julia cell is checked, never run, so a Julia
+// cell that parses is not a failure, nor is a cell that reads its variables
+// (blocked); a syntax error in a Julia cell is.
 package main
 
 import (
@@ -200,8 +202,14 @@ func build(c config) error {
 			return err
 		}
 		failed := false
+		var langs []string // of the code cells, as Run numbers them
+		for _, c := range engine.Cells(string(src)) {
+			if c.Kind == "code" {
+				langs = append(langs, c.Lang)
+			}
+		}
 		for _, r := range engine.Run(string(src)) {
-			if r.Error != "" {
+			if cellFailed(r, langs[r.Cell]) {
 				fmt.Fprintf(c.stderr, "%s:%d: cell %d failed:\n%s\n", path, r.Line, r.Cell, r.Error)
 				failed = true
 			}
@@ -297,7 +305,26 @@ func build(c config) error {
 	return nil
 }
 
-var heading = regexp.MustCompile(`(?m)^#\s+(.+?)\s*#*\s*$`)
+// cellFailed reports whether a cell of the language lang failed. Two outcomes
+// are not failures, by their typed status and not by their text: a Julia cell
+// that parsed and checked and is not run by design (go-embedded-julia has no
+// runtime yet), and a cell of another language that reads what one defines.
+// Each is accepted only where it can happen: anything else with an error, a
+// syntax error in a Julia cell included, fails the build.
+func cellFailed(r engine.Result, lang string) bool {
+	if r.Error == "" {
+		return false
+	}
+	switch r.Status {
+	case engine.StatusNotRun:
+		return lang != "julia"
+	case engine.StatusBlocked:
+		return lang == "julia"
+	}
+	return true
+}
+
+var heading =regexp.MustCompile(`(?m)^#\s+(.+?)\s*#*\s*$`)
 
 // title is the notebook's first level-one heading, or its name.
 func title(src, name string) string {
