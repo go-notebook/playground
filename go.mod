@@ -3,14 +3,14 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-fleettools/landingkit v0.12.0
-	github.com/go-ndarray/ndarray v0.12.0
+	github.com/go-fleettools/landingkit v0.14.0
+	github.com/go-ndarray/ndarray v0.28.0
 	github.com/go-notebook/notebook v0.6.0
 	github.com/go-numerics/integrate v0.2.0
-	github.com/go-numerics/optimize v0.2.0
-	github.com/go-numerics/special v0.1.0
-	github.com/go-plot/plot v0.1.1
-	github.com/go-scikit/ruby v0.1.2
+	github.com/go-numerics/optimize v0.3.0
+	github.com/go-numerics/special v0.2.0
+	github.com/go-plot/plot v0.3.0
+	github.com/go-scikit/ruby v0.2.0
 	github.com/go-statistics/stats v0.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -25,7 +25,6 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
 	github.com/abtreece/confd v0.41.2 // indirect
-	github.com/ajroetker/go-highway v0.0.12 // indirect
 	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
@@ -98,15 +97,15 @@ require (
 	github.com/go-embedded-ruby/ruby v0.8.3 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
-	github.com/go-fft/fft v0.23.0 // indirect
-	github.com/go-gfx/gfx v0.35.0 // indirect
+	github.com/go-fft/fft v0.27.3 // indirect
+	github.com/go-gfx/gfx v0.36.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
 	github.com/go-icons/iconoir v0.2.0 // indirect
 	github.com/go-images/gif v0.1.0 // indirect
 	github.com/go-images/images v0.0.0-20260927173152-87444e36aac4 // indirect
 	github.com/go-images/jpeg v0.2.0 // indirect
-	github.com/go-images/jpeg2000 v0.13.3 // indirect
+	github.com/go-images/jpeg2000 v0.13.7 // indirect
 	github.com/go-images/png v0.1.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-kramdown/kramdown v0.2.0 // indirect
@@ -116,8 +115,8 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-mustache/mustache v0.1.0 // indirect
 	github.com/go-nokogiri/nokogiri v0.1.0 // indirect
-	github.com/go-opentype/fonts v0.12.0 // indirect
-	github.com/go-opentype/opentype v0.15.0 // indirect
+	github.com/go-opentype/fonts v0.14.0 // indirect
+	github.com/go-opentype/opentype v0.16.0 // indirect
 	github.com/go-opentype/shape v0.5.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
@@ -307,6 +306,7 @@ require (
 	github.com/go-simd/base64 v0.0.0-20260903220000-c04f5883bb18 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
+	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
@@ -314,7 +314,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/go-widgets/mvvm v0.9.0 // indirect
-	github.com/go-widgets/painter v0.15.0 // indirect
+	github.com/go-widgets/painter v0.16.0 // indirect
 	github.com/go-widgets/toolkit v0.321.2 // indirect
 	github.com/go-widgets/tui v0.61.0 // indirect
 	github.com/go-xslt/xslt v0.1.0 // indirect
@@ -403,12 +403,12 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
-	golang.org/x/image v0.46.0 // indirect
+	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
