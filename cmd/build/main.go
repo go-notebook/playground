@@ -324,7 +324,7 @@ func cellFailed(r engine.Result, lang string) bool {
 	return true
 }
 
-var heading =regexp.MustCompile(`(?m)^#\s+(.+?)\s*#*\s*$`)
+var heading = regexp.MustCompile(`(?m)^#\s+(.+?)\s*#*\s*$`)
 
 // title is the notebook's first level-one heading, or its name.
 func title(src, name string) string {
