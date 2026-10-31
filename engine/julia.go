@@ -18,17 +18,18 @@ import (
 // JuliaSupported reports whether this build checks Julia cells.
 const JuliaSupported = true
 
-// juliaCell is a Julia cell's failure: its syntax error, at the cell's line
-// and column, or analysis.JuliaNotRun.
-func juliaCell(src string) string {
+// juliaCell is a Julia cell's message: its syntax error, at the cell's line
+// and column (checked is false, a failure), or analysis.JuliaNotRun (checked
+// is true: the cell is well formed and not run by design).
+func juliaCell(src string) (msg string, checked bool) {
 	c := analysis.AnalyzeJuliaCell(0, src)
 	if len(c.Errors) == 0 {
-		return analysis.JuliaNotRun
+		return analysis.JuliaNotRun, true
 	}
 	e := c.Errors[0]
 	line := 1 + strings.Count(src[:e.Pos], "\n")
 	col := e.Pos - strings.LastIndexByte(src[:e.Pos], '\n')
-	return fmt.Sprintf("line %d:%d: %s", line, col, e.Msg)
+	return fmt.Sprintf("line %d:%d: %s", line, col, e.Msg), false
 }
 
 // juliaBlocked maps each code cell that reads what a Julia cell defines,

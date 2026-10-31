@@ -53,12 +53,27 @@ type Result struct {
 	Display []map[string]string `json:"display,omitempty"`
 	// Error is why the cell failed, with the line in the cell.
 	Error string `json:"error,omitempty"`
+	// Status says why a cell has an Error that is not a failure: StatusNotRun
+	// for a Julia cell that parsed and checked but is not run by design, and
+	// StatusBlocked for a cell that reads what one defines. Empty for a cell
+	// that ran, and for a cell that failed (Error alone).
+	Status string `json:"status,omitempty"`
 	// Skipped reports a cell that did not run because one before it
 	// failed.
 	Skipped bool `json:"skipped,omitempty"`
 	// Millis is how long the cell ran.
 	Millis float64 `json:"ms"`
 }
+
+// The Status values of a Result.
+const (
+	// StatusNotRun is a Julia cell that parsed and checked: it is not run, by
+	// design, until go-embedded-julia has a runtime. It is not a failure.
+	StatusNotRun = "notrun"
+	// StatusBlocked is a cell that reads a variable a Julia cell defines, so
+	// it waits for that cell. It is not a failure.
+	StatusBlocked = "blocked"
+)
 
 // Cell is a cell of a notebook, as the page shows it.
 type Cell struct {
@@ -118,11 +133,16 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 		// A Julia cell is checked, never run, and so are the cells that read
 		// it: each says why, and the others run.
 		if c.Lang == analysis.Julia {
-			out[i].Error = juliaCell(c.Source)
+			msg, checked := juliaCell(c.Source)
+			out[i].Error = msg
+			if checked {
+				out[i].Status = StatusNotRun
+			}
 			continue
 		}
 		if j, ok := blocked[i]; ok {
 			out[i].Error = analysis.JuliaBlocked(j)
+			out[i].Status = StatusBlocked
 			continue
 		}
 		if started != nil {
