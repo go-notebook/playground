@@ -8,6 +8,8 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const examples = JSON.parse($('examples-data').textContent);
+  // The URL of each core, with a hash of its bytes in it (cmd/build).
+  const cores = JSON.parse($('cores-data').textContent);
   const article = $('notebook');
   const status = $('status');
   const runButton = $('run');
@@ -67,9 +69,16 @@
     ready = false;
     fatal = null;
     updateBadges();
-    worker = new Worker(engine === 'ruby' ? 'worker.js?engine=ruby' : 'worker.js');
+    // ?engine= is for a worker.js cached from before ?core=, which names the
+    // core with a hash of its bytes (cmd/build).
+    const core = cores[engine === 'ruby' ? 'ruby' : 'go'];
+    worker = new Worker('worker.js?engine=' + (engine === 'ruby' ? 'ruby' : 'go') + (core ? '&core=' + encodeURIComponent(core) : ''));
     worker.onmessage = (e) => {
       const m = e.data;
+      if (m.type === 'downloading') {
+        if (carousel) carousel.downloading();
+        return;
+      }
       if (m.type === 'downloaded') {
         if (carousel) carousel.downloaded();
         return;

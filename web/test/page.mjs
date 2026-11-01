@@ -75,8 +75,15 @@ const slow = { worker: 0 };
 const CODE_BADGES = '#notebook .cell[data-lang] .cell-head .lang-badge';
 const corePattern = /\/playground(-ruby)?\.wasm(\?.*)?$/;
 async function holdCore(context) {
+  // The worker first asks the browser's cache for the core (only-if-cached,
+  // which fails at once when nothing is cached) and only then downloads it:
+  // that first request goes through, the download is held back.
+  const asked = new Map();
   await context.route(corePattern, async (route) => {
-    await new Promise((r) => setTimeout(r, HOLD));
+    const u = route.request().url();
+    const first = !asked.has(u);
+    asked.set(u, true);
+    if (!first) await new Promise((r) => setTimeout(r, HOLD));
     await route.continue();
   });
 }
@@ -471,7 +478,7 @@ try {
   // open, and how much of it crosses the wire is part of the report.
   let rubyFetched = null;
   page.on('requestfinished', async (req) => {
-    if (!req.url().endsWith('/playground-ruby.wasm')) return;
+    if (!/\/playground-ruby\.wasm(\?|$)/.test(req.url())) return;
     const sizes = await req.sizes().catch(() => null);
     const resp = await req.response();
     rubyFetched = {

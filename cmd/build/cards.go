@@ -97,6 +97,10 @@ func carousel(dir string, accent string) (template.HTML, error) {
 		Label:  "What go-notebook does",
 		Start:  "Open the notebook",
 		Fade:   "loading",
+		// counted from the worker's "downloading", sent when the core really
+		// comes over the network: a cached core, or a runtime that is slow to
+		// start, never shows the carousel
+		Signal: true,
 	})
 }
 

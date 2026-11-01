@@ -17,6 +17,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -260,6 +261,19 @@ func build(c config) error {
 		return err
 	}
 
+	// Each core's URL carries a hash of its bytes: the same URL is always the
+	// same core, so the worker may use a copy the browser holds whatever its
+	// age (see web/worker.js), and a new build is a new URL.
+	cores, sizes := map[string]string{}, map[string]int64{}
+	for key, path := range map[string]string{"go": wasm, "ruby": rubyWasm} {
+		u, size, err := coreURL(path)
+		if err != nil {
+			return err
+		}
+		cores[key], sizes[key] = u, size
+	}
+	coresJSON, _ := json.Marshal(cores) // strings always encode
+
 	// The page.
 	for _, name := range []string{"playground.css", "playground.js", "worker.js"} {
 		b, _ := web.Files.ReadFile(name) // embedded
@@ -286,22 +300,15 @@ func build(c config) error {
 		"Libraries":   html.EscapeString(c.libraries),
 		"Version":     html.EscapeString(version()),
 		"Examples":    string(data),
+		"Cores":       string(coresJSON),
 		"Carousel":    string(car), // html/template's output
 	})
 	if err := os.WriteFile(filepath.Join(c.out, "index.html"), page.Bytes(), 0o644); err != nil {
 		return err
 	}
 
-	st, err := os.Stat(wasm)
-	if err != nil {
-		return err
-	}
-	rst, err := os.Stat(rubyWasm)
-	if err != nil {
-		return err
-	}
 	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
-		c.out, len(exs), float64(st.Size())/1e6, float64(rst.Size())/1e6)
+		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6)
 	return nil
 }
 
@@ -322,6 +329,22 @@ func cellFailed(r engine.Result, lang string) bool {
 		return lang == "julia"
 	}
 	return true
+}
+
+// coreURL is a core's URL as the page asks for it: its file name and a hash
+// of its content, "playground.wasm?v=0123456789ab", and its size in bytes.
+func coreURL(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, err
+	}
+	return fmt.Sprintf("%s?v=%x", filepath.Base(path), h.Sum(nil)[:6]), n, nil
 }
 
 var heading = regexp.MustCompile(`(?m)^#\s+(.+?)\s*#*\s*$`)

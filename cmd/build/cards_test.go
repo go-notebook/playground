@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -105,6 +106,36 @@ func TestCarouselErrors(t *testing.T) {
 		if _, err := carousel(t.TempDir(), "#000"); err == nil || !strings.Contains(err.Error(), `the picture of "Cells": the cell shows nothing`) {
 			t.Errorf("%+v: %v", rs, err)
 		}
+	}
+}
+
+// A core's URL names its bytes: the same bytes the same URL, other bytes
+// another, and a core that cannot be read is an error.
+func TestCoreURL(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, s string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, size, err := coreURL(write("playground.wasm", "one"))
+	if err != nil || size != 3 || !regexp.MustCompile(`^playground\.wasm\?v=[0-9a-f]{12}$`).MatchString(a) {
+		t.Fatalf("coreURL = %q, %d, %v", a, size, err)
+	}
+	if again, _, _ := coreURL(filepath.Join(dir, "playground.wasm")); again != a {
+		t.Errorf("the same bytes gave %q then %q", a, again)
+	}
+	b, _, _ := coreURL(write("playground.wasm", "two"))
+	if b == a {
+		t.Error("other bytes, the same URL")
+	}
+	if _, _, err := coreURL(filepath.Join(dir, "absent.wasm")); err == nil {
+		t.Error("a core that is not there")
+	}
+	if _, _, err := coreURL(dir); err == nil { // a directory opens, and cannot be read
+		t.Error("a directory is not a core")
 	}
 }
 
