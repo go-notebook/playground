@@ -4,12 +4,12 @@ go 1.27.3
 
 require (
 	github.com/go-fleettools/landingkit v0.18.0
-	github.com/go-ndarray/ndarray v0.28.0
+	github.com/go-ndarray/ndarray v0.32.0
 	github.com/go-notebook/notebook v0.6.1
 	github.com/go-numerics/integrate v0.2.0
-	github.com/go-numerics/optimize v0.3.1
+	github.com/go-numerics/optimize v0.5.0
 	github.com/go-numerics/special v0.2.0
-	github.com/go-plot/plot v0.1.1
+	github.com/go-plot/plot v0.3.1
 	github.com/go-scikit/ruby v0.2.1
 	github.com/go-statistics/stats v0.1.0
 	github.com/spf13/cobra v1.10.2
@@ -25,7 +25,6 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
 	github.com/abtreece/confd v0.41.2 // indirect
-	github.com/ajroetker/go-highway v0.0.12 // indirect
 	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
@@ -99,14 +98,14 @@ require (
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
 	github.com/go-fft/fft v0.28.6 // indirect
-	github.com/go-gfx/gfx v0.35.0 // indirect
+	github.com/go-gfx/gfx v0.37.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
 	github.com/go-icons/iconoir v0.2.0 // indirect
 	github.com/go-images/gif v0.2.0 // indirect
 	github.com/go-images/images v0.1.0 // indirect
 	github.com/go-images/jpeg v0.3.0 // indirect
-	github.com/go-images/jpeg2000 v0.13.3 // indirect
+	github.com/go-images/jpeg2000 v0.14.0 // indirect
 	github.com/go-images/png v0.2.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-kramdown/kramdown v0.3.1 // indirect
@@ -116,7 +115,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-mustache/mustache v0.1.0 // indirect
 	github.com/go-nokogiri/nokogiri v0.1.0 // indirect
-	github.com/go-opentype/fonts v0.12.0 // indirect
+	github.com/go-opentype/fonts v0.14.0 // indirect
 	github.com/go-opentype/opentype v0.16.1 // indirect
 	github.com/go-opentype/shape v0.7.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
@@ -306,7 +305,10 @@ require (
 	github.com/go-simd/adler32 v0.1.0 // indirect
 	github.com/go-simd/base64 v0.1.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
+	github.com/go-simd/floats v0.5.0 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
+	github.com/go-simd/highway v0.0.14 // indirect
+	github.com/go-sparse/sparse v0.2.1 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
 	github.com/go-typeset/bidi v0.3.0 // indirect
@@ -314,7 +316,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/go-widgets/mvvm v0.9.0 // indirect
-	github.com/go-widgets/painter v0.15.0 // indirect
+	github.com/go-widgets/painter v0.16.0 // indirect
 	github.com/go-widgets/toolkit v0.321.2 // indirect
 	github.com/go-widgets/tui v0.61.0 // indirect
 	github.com/go-xslt/xslt v0.1.0 // indirect
@@ -372,8 +374,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
-	github.com/sergeymakinen/go-ico v1.0.0 // indirect
 	github.com/tannevaled/gobig2 v0.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twmb/franz-go v1.22.2 // indirect
