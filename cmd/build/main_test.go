@@ -102,6 +102,10 @@ func TestBuild(t *testing.T) {
 		`<div id="loading"><style>`,
 		`aria-roledescription="carousel" aria-label="What go-notebook does"`,
 		`src="cards/1.svg?v=`,
+		// counted from the worker's "downloading", never from the script
+		` hidden data-signal="1" data-delay="300"`,
+		// each core's URL carries a hash of its bytes
+		`<script id="cores-data" type="application/json">{"go":"playground.wasm?v=`,
 	} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("index.html lacks %s", want)
@@ -110,8 +114,8 @@ func TestBuild(t *testing.T) {
 	if bytes.Index(page, []byte("window.landingkitCarousel=api")) > bytes.Index(page, []byte(`<script src="playground.js">`)) {
 		t.Error("the carousel's script comes after playground.js")
 	}
-	// the carousel's script, the notebooks' data and playground.js
-	if bytes.Count(page, []byte("</script>")) != 3 {
+	// the carousel's script, the notebooks' data, the cores' URLs and playground.js
+	if bytes.Count(page, []byte("</script>")) != 4 {
 		t.Error("a notebook closed a <script> early")
 	}
 	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {

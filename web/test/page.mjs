@@ -29,7 +29,7 @@ let url = target;
 const served = new Map();
 if (!/^https?:/.test(target)) {
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.md': 'text/markdown', '.svg': 'image/svg+xml' };
-  server = http.createServer((req, res) => {
+  server = http.createServer(async (req, res) => {
     const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     const p = path.join(target, name);
     const file = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, 'index.html') : p;
@@ -40,7 +40,11 @@ if (!/^https?:/.test(target)) {
     served.set(path.basename(name), (served.get(path.basename(name)) || 0) + 1);
     // Cacheable, as GitHub Pages serves it (max-age=600), so that a second
     // load can come from the cache.
-    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'max-age=600' });
+    // worker.js is never cached here, so that every load asks for it and can
+    // be made to wait for it (slow.worker).
+    const worker = path.basename(name) === 'worker.js';
+    if (worker && slow.worker) await new Promise((r) => setTimeout(r, slow.worker));
+    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': worker ? 'no-store' : 'max-age=600' });
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -63,13 +67,23 @@ const fail = (msg) => {
 // run in a profile of their own, on disk: only a disk cache holds a 30 MB
 // core, and a second load must be able to come from it.
 const HOLD = 5200;
+// How long the local server holds worker.js back, to make a machine on which
+// the runtime takes longer to start than the kit's 300 ms.
+const slow = { worker: 0 };
 // A code cell's language badge (prose cells have one too, and so do the
 // fences in prose).
 const CODE_BADGES = '#notebook .cell[data-lang] .cell-head .lang-badge';
 const corePattern = /\/playground(-ruby)?\.wasm(\?.*)?$/;
 async function holdCore(context) {
+  // The worker first asks the browser's cache for the core (only-if-cached,
+  // which fails at once when nothing is cached) and only then downloads it:
+  // that first request goes through, the download is held back.
+  const asked = new Map();
   await context.route(corePattern, async (route) => {
-    await new Promise((r) => setTimeout(r, HOLD));
+    const u = route.request().url();
+    const first = !asked.has(u);
+    asked.set(u, true);
+    if (!first) await new Promise((r) => setTimeout(r, HOLD));
     await route.continue();
   });
 }
@@ -141,6 +155,33 @@ async function carouselChecks() {
     if (st.shown) fail('cached load: the carousel flashed');
     if (server && fetched !== 0) fail(`cached load: the core was sent again (${fetched}): this was not a cached load`);
     if (!(await page.evaluate(() => document.getElementById('loading').hidden))) fail('cached load: #loading is not hidden');
+
+    // 2b. The core in the cache, on a machine where the runtime is slow to
+    // start (the local server holds worker.js back 800 ms, past the kit's
+    // 300 ms): the carousel must still not show, because the core is not
+    // being downloaded. This is what failed on CI after v0.6.0: the carousel
+    // keyed on how long the runtime took to say "downloaded", not on whether
+    // the core was coming over the network. (Only the local server can slow
+    // the worker, so a deployed page skips this.)
+    if (server) {
+      slow.worker = 800;
+      try {
+        await page.goto('about:blank');
+        const t0 = served.get('playground.wasm') || 0;
+        page = await open(context, 'cached, slow start');
+        await waitReady(page);
+        st = await state(page);
+        const took = await page.evaluate(() => Math.round(window.playgroundTimings.runtimeReady));
+        const sent = (served.get('playground.wasm') || 0) - t0;
+        console.log(`carousel: cached load, runtime ready ${took} ms after navigation (worker held 800 ms), shown ${st.shown}, core sent ${sent} times`);
+        if (took < 800) fail(`the slow start was not slow (ready after ${took} ms): the test measures nothing`);
+        if (st.shown) fail(`cached load, runtime ready after ${took} ms: the carousel flashed`);
+        if (sent !== 0) fail(`cached load, slow start: the core was sent again (${sent})`);
+        if (!(await page.evaluate(() => document.getElementById('loading').hidden))) fail('cached load, slow start: #loading is not hidden');
+      } finally {
+        slow.worker = 0;
+      }
+    }
   } finally {
     await context.close();
     fs.rmSync(profile, { recursive: true, force: true });
@@ -437,7 +478,7 @@ try {
   // open, and how much of it crosses the wire is part of the report.
   let rubyFetched = null;
   page.on('requestfinished', async (req) => {
-    if (!req.url().endsWith('/playground-ruby.wasm')) return;
+    if (!/\/playground-ruby\.wasm(\?|$)/.test(req.url())) return;
     const sizes = await req.sizes().catch(() => null);
     const resp = await req.response();
     rubyFetched = {

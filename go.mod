@@ -3,7 +3,7 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-fleettools/landingkit v0.12.0
+	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.12.0
 	github.com/go-notebook/notebook v0.6.0
 	github.com/go-numerics/integrate v0.2.0
