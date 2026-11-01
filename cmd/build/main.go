@@ -265,12 +265,12 @@ func build(c config) error {
 	// same core, so the worker may use a copy the browser holds whatever its
 	// age (see web/worker.js), and a new build is a new URL.
 	cores, sizes := map[string]string{}, map[string]int64{}
-	for key, path := range map[string]string{"go": wasm, "ruby": rubyWasm} {
-		u, size, err := coreURL(path)
+	for _, core := range []struct{ key, path string }{{"go", wasm}, {"ruby", rubyWasm}} { // in this order: a map would fail in any
+		u, size, err := coreURL(core.path)
 		if err != nil {
 			return err
 		}
-		cores[key], sizes[key] = u, size
+		cores[core.key], sizes[core.key] = u, size
 	}
 	coresJSON, _ := json.Marshal(cores) // strings always encode
 
