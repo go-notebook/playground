@@ -260,8 +260,8 @@ github.com/go-ndarray/ndarray v0.28.0 h1:9RWfw01uRUH1YqsVUpNllm01XEohqdSfsk4Kw0x
 github.com/go-ndarray/ndarray v0.28.0/go.mod h1:bDbGWswQLmTMh6V3LwvKUbpfHzeG4sZDcvuGnA0GC+s=
 github.com/go-nokogiri/nokogiri v0.1.0 h1:3Q3BewGHK16Bt34ggJeyf9xeIMJyA3dmfbIxARPgR9U=
 github.com/go-nokogiri/nokogiri v0.1.0/go.mod h1:zjghooYIK8Xfg+fL4/OUhROslx51xGsM3JKtB2TI0tg=
-github.com/go-notebook/notebook v0.6.1 h1:2zijG2aTv6AawGfvcrgiROes0l++uKXave0b9V9a5Tg=
-github.com/go-notebook/notebook v0.6.1/go.mod h1:9Ntg+aj6a/DKwAKD75qED+XWJ7+4t65Auwxe0OMwyEw=
+github.com/go-notebook/notebook v0.7.0 h1:CgauDBjvr0BBlpPphc9H0NkLaxkLOr4ISBPDJD+pBXI=
+github.com/go-notebook/notebook v0.7.0/go.mod h1:9Ntg+aj6a/DKwAKD75qED+XWJ7+4t65Auwxe0OMwyEw=
 github.com/go-numerics/integrate v0.2.0 h1:IkJhDimTc7nQETCixEvbbHhtOF36GbANBKJI3mJB3Kw=
 github.com/go-numerics/integrate v0.2.0/go.mod h1:ABjpcWy8ZSOg8j6S+7YRsvMJ2LpVkH4E64/CGet2gCw=
 github.com/go-numerics/optimize v0.3.1 h1:eYkT9BpORKSwXnDtEJxXfZ19qJT0cI2RH6xEL3VLZSU=

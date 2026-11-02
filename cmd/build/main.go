@@ -32,6 +32,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/go-notebook/notebook/analysis"
 	"github.com/spf13/cobra"
 
 	"github.com/go-notebook/playground/engine"
@@ -288,6 +289,7 @@ func build(c config) error {
 		return err
 	}
 	data, _ := json.Marshal(exs) // escapes <, > and &: safe inside <script>
+	langsJSON, _ := json.Marshal(languages())
 	tmpl := template.Must(template.ParseFS(web.Files, "index.html"))
 	var page bytes.Buffer
 	_ = tmpl.Execute(&page, map[string]string{ // into memory: cannot fail
@@ -301,6 +303,7 @@ func build(c config) error {
 		"Version":     html.EscapeString(version()),
 		"Examples":    string(data),
 		"Cores":       string(coresJSON),
+		"Languages":   string(langsJSON),
 		"Carousel":    string(car), // html/template's output
 	})
 	if err := os.WriteFile(filepath.Join(c.out, "index.html"), page.Bytes(), 0o644); err != nil {
@@ -312,21 +315,68 @@ func build(c config) error {
 	return nil
 }
 
+// language is a cell language as the page offers it: its fence word, the
+// name its badge shows, whether its cells run, and the core that analyses or
+// runs them.
+type language struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	Runs  bool   `json:"runs"`
+	Core  string `json:"core"`
+}
+
+// languages are the languages go-notebook registers (analysis.Languages), so
+// that a language added there reaches the badges and the + menu without an
+// edit here. The default core holds Go only; every other language rides the
+// second core, built with its runtime and its parser (see build).
+func languages() []language {
+	var out []language
+	for _, name := range analysis.Languages() {
+		core := "ruby"
+		if name == analysis.Go {
+			core = "go"
+		}
+		out = append(out, language{Name: name, Label: label(name), Runs: analysis.RunOf(name).Runs, Core: core})
+	}
+	// The menus' order: Go, the default, then the languages that run, then
+	// those only checked; by name within each.
+	rank := func(l language) int {
+		switch {
+		case l.Name == analysis.Go:
+			return 0
+		case l.Runs:
+			return 1
+		}
+		return 2
+	}
+	sort.SliceStable(out, func(i, j int) bool { return rank(out[i]) < rank(out[j]) })
+	return out
+}
+
+// label is the name a badge shows for a fence word: "go" is Go, "r" is R.
+func label(name string) string {
+	if name == "" {
+		return name
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
 // cellFailed reports whether a cell of the language lang failed. Two outcomes
-// are not failures, by their typed status and not by their text: a Julia cell
-// that parsed and checked and is not run by design (go-embedded-julia has no
-// runtime yet), and a cell of another language that reads what one defines.
-// Each is accepted only where it can happen: anything else with an error, a
-// syntax error in a Julia cell included, fails the build.
+// are not failures, by their typed status and not by their text: a cell of a
+// language that is checked and not run by design (Julia, until
+// go-embedded-julia has a runtime), and a cell of a language that runs that
+// reads what one defines. Each is accepted only where it can happen: anything
+// else with an error, a syntax error in a checked cell included, fails the
+// build.
 func cellFailed(r engine.Result, lang string) bool {
 	if r.Error == "" {
 		return false
 	}
 	switch r.Status {
 	case engine.StatusNotRun:
-		return lang != "julia"
+		return analysis.RunOf(lang).Runs
 	case engine.StatusBlocked:
-		return lang == "julia"
+		return !analysis.RunOf(lang).Runs
 	}
 	return true
 }
