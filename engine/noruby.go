@@ -23,11 +23,11 @@ func (s *session) rubyCell(string) (string, []map[string]string, string) {
 // cell.
 const JuliaSupported = false
 
-// juliaCell is what the default core says of a Julia cell; the page never
-// sends it one.
-func juliaCell(string) (string, bool) {
-	return "this build checks no Julia cells (in the page, the core with the Julia parser is loaded for a notebook with Julia cells)", false
+// checkedCell is what the default core says of a cell of a check-only
+// language (Julia, R); the page never sends it one.
+func checkedCell(lang, _ string) (string, bool) {
+	return "this build checks no " + lang + " cells (in the page, the core with the parsers is loaded for a notebook with " + lang + " cells)", false
 }
 
-// juliaBlocked finds nothing to block without the Julia analysis.
-func juliaBlocked([]format.Cell) map[int]int { return nil }
+// checkedBlocked finds nothing to block without the analysis.
+func checkedBlocked([]format.Cell) map[int]int { return nil }
