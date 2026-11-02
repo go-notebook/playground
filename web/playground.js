@@ -141,14 +141,33 @@
     startWorker();
   }
 
-  // needsRubyCore reports whether cells need the second core: it runs Ruby
-  // cells, and checks Julia cells (it has go-embedded-julia's parser, which
-  // the default core leaves out).
-  const needsRubyCore = (cells) => cells.some((c) => c.kind === 'code' && (c.lang === 'ruby' || c.lang === 'julia'));
+  // ---- Languages --------------------------------------------------------
 
-  // ensureEngine switches to the Ruby core when the cells hold a Ruby or a
-  // Julia cell, once: a visitor who runs only Go never downloads it. It
-  // reports whether they do.
+  // Each cell says, in text, which language runs it: the first word of its
+  // fence's info string (```go, ```ruby), as go-notebook's format package
+  // reads it, never guessed from the code. While the runtime that runs that
+  // language is not ready, or cannot run it, the badge says so too. The
+  // badge is the cell's language control: changing it rewrites the fence.
+  //
+  // The languages are go-notebook's registered ones, written into the page
+  // by cmd/build: {name, label, runs, core}. A language that does not run
+  // (Julia, until go-embedded-julia has a runtime) is parsed and checked, and
+  // the + menu and the language menu say so, in the badge's own words.
+  const LANGUAGES = new Map(JSON.parse($('languages-data').textContent).map((l) => [l.name, l]));
+  const language = (l) => LANGUAGES.get(l || 'go');
+  const langName = (l) => (l === 'markdown' ? 'Markdown' : language(l)?.label ?? l);
+  // The kinds a cell can be here: the languages this build knows, and prose.
+  const KINDS = [...LANGUAGES.keys(), 'markdown'];
+  const kindLabel = (k) => (language(k)?.runs === false ? langName(k) + ' · not runnable yet' : langName(k));
+
+  // needsRubyCore reports whether cells need the second core: it runs or
+  // checks every language but Go (it has their runtimes and parsers, which
+  // the default core leaves out).
+  const needsRubyCore = (cells) => cells.some((c) => c.kind === 'code' && language(c.lang)?.core === 'ruby');
+
+  // ensureEngine switches to the Ruby core when the cells hold a cell of a
+  // language only it has, once: a visitor who runs only Go never downloads
+  // it. It reports whether they do.
   function ensureEngine(cells) {
     const needed = needsRubyCore(cells);
     if (needed && engine !== 'ruby') {
@@ -158,34 +177,21 @@
       pending.clear();
       queue = [];
       startWorker();
-      setStatus(cells.some((c) => c.kind === 'code' && c.lang === 'ruby') ? 'Loading the Ruby runtime…' : 'Loading the Julia parser…');
+      const second = cells.map((c) => c.kind === 'code' && language(c.lang)).filter((l) => l && l.core === 'ruby');
+      const first = second.find((l) => l.runs) ?? second[0];
+      setStatus(`Loading the ${first.label} ${first.runs ? 'runtime' : 'parser'}…`);
     }
     return needed;
   }
 
-  // ---- Languages --------------------------------------------------------
-
-  // Each cell says, in text, which language runs it: the first word of its
-  // fence's info string (```go, ```ruby), as go-notebook's format package
-  // reads it, never guessed from the code. While the runtime that runs that
-  // language is not ready, or cannot run it, the badge says so too. The
-  // badge is the cell's language control: changing it rewrites the fence.
-  const LANGS = { go: 'Go', ruby: 'Ruby', julia: 'Julia', markdown: 'Markdown' };
-  const langName = (l) => (Object.hasOwn(LANGS, l) ? LANGS[l] : l); // "__proto__" is a word too
-  // The kinds a cell can be here: the languages this build knows, and prose.
-  // A Julia cell is parsed and checked, not run, and the + menu and the
-  // language menu say so, in the badge's own words.
-  const KINDS = ['go', 'ruby', 'julia', 'markdown'];
-  const kindLabel = (k) => (k === 'julia' ? 'Julia · not runnable yet' : langName(k));
   let fatal = null;
   function langStatus(lang) {
-    // Julia cells are parsed and checked, never run: go-embedded-julia has no
-    // runtime yet (its milestone M3).
-    if (lang === 'julia') return 'not runnable yet';
-    if (lang !== 'go' && lang !== 'ruby') return 'not run in this playground';
+    const l = language(lang);
+    if (!l) return 'not run in this playground';
+    if (!l.runs) return 'not runnable yet';
     if (fatal) return 'cannot run: the runtime did not start';
-    if (lang === 'ruby' && engine !== 'ruby') return 'waits for the Ruby runtime';
-    if (!ready) return lang === 'ruby' ? 'loading the Ruby runtime…' : 'loading the runtime…';
+    if (l.core !== engine && l.core !== 'go') return `waits for the ${l.label} runtime`;
+    if (!ready) return l.core === 'go' ? 'loading the runtime…' : `loading the ${l.label} runtime…`;
     return '';
   }
   function updateBadges() {

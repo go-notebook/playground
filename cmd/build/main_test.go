@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-notebook/notebook/analysis"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -114,8 +116,9 @@ func TestBuild(t *testing.T) {
 	if bytes.Index(page, []byte("window.landingkitCarousel=api")) > bytes.Index(page, []byte(`<script src="playground.js">`)) {
 		t.Error("the carousel's script comes after playground.js")
 	}
-	// the carousel's script, the notebooks' data, the cores' URLs and playground.js
-	if bytes.Count(page, []byte("</script>")) != 4 {
+	// the carousel's script, the notebooks' data, the cores' URLs, the
+	// languages and playground.js
+	if bytes.Count(page, []byte("</script>")) != 5 {
 		t.Error("a notebook closed a <script> early")
 	}
 	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
@@ -236,6 +239,48 @@ func TestFailed(t *testing.T) {
 		if got := cellFailed(tc.r, tc.lang); got != tc.want {
 			t.Errorf("cellFailed(%+v, %q) = %v, want %v", tc.r, tc.lang, got, tc.want)
 		}
+	}
+}
+
+// The page offers go-notebook's registered languages: Go first, then those
+// that run, then those only checked.
+func TestLanguages(t *testing.T) {
+	got, _ := json.Marshal(languages())
+	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
+		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
+		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
+	if string(got) != want {
+		t.Errorf("languages() = %s, want %s", got, want)
+	}
+}
+
+// fakeLang is a language registered by a test only: checked, never run.
+type fakeLang struct{ name string }
+
+func (l fakeLang) Name() string { return l.name }
+func (fakeLang) Analyze(string, analysis.Limits) (analysis.Names, []analysis.Diagnostic, error) {
+	return analysis.Names{}, nil, nil
+}
+func (fakeLang) Crosses(_, _ *analysis.Cell, _ string) bool { return true }
+func (fakeLang) Run() analysis.Run                          { return analysis.Run{NotRun: "not run"} }
+
+// A language go-notebook registers reaches the page, and the build accepts
+// its cells' not-run outcome, with no edit to the playground.
+func TestRegisteredLanguage(t *testing.T) {
+	analysis.Register(fakeLang{"r"})
+	defer analysis.Unregister("r")
+	ls := languages()
+	if l := ls[len(ls)-1]; l != (language{Name: "r", Label: "R", Runs: false, Core: "ruby"}) {
+		t.Errorf("last language = %+v, want R, checked, on the second core", l)
+	}
+	if cellFailed(engine.Result{Error: "x", Status: engine.StatusNotRun}, "r") {
+		t.Error("a not-run R cell failed the build")
+	}
+	if !cellFailed(engine.Result{Error: "x", Status: engine.StatusBlocked}, "r") {
+		t.Error("a blocked R cell did not fail the build: only a cell that runs can be blocked")
+	}
+	if label("") != "" {
+		t.Error(`label("") is not empty`)
 	}
 }
 
