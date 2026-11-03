@@ -207,6 +207,8 @@ github.com/go-datetime/dates v0.2.0 h1:5zXrMqTgw3ljlQfghRsdJRtXYqnR6jYqTgMvA3kG8
 github.com/go-datetime/dates v0.2.0/go.mod h1:FmzSHylloy714Cc8MEkRjREYP7TcslqjmzsFMQXglAg=
 github.com/go-embedded-julia/julia v0.5.0 h1:yLdnc0M+qycG8lbkDyH58RYushqdMOp2xdrIZpaIcBo=
 github.com/go-embedded-julia/julia v0.5.0/go.mod h1:f8anO/Ngw/UB/9Fj/k9qX/F8LRgh90Bp1VaJ2SQsGgw=
+github.com/go-embedded-r/r v0.1.0 h1:GdGFSo2UNwTcCEYvdp1bVWPnxwCDm0pm6Mkd6v2dQ6E=
+github.com/go-embedded-r/r v0.1.0/go.mod h1:ac1Px4RIxnrBB88WLetKff8ZDkurBTXwPoh/YteYmKg=
 github.com/go-embedded-ruby/ruby v0.8.5 h1:JGKa6Cz4ihKNVfooeeytuPsT133byK7CkZr04Px9PYQ=
 github.com/go-embedded-ruby/ruby v0.8.5/go.mod h1:2wJ+VJXuGxD+Zl98T0L+/OQN1c5J/eLq452MS7aVZ2M=
 github.com/go-encryptions/unixcrypt v0.1.0 h1:XWk4h9uCDd+T2hovOzgO0B2vOdJvAwi9nbOBVb3o62c=
@@ -260,8 +262,8 @@ github.com/go-ndarray/ndarray v0.28.0 h1:9RWfw01uRUH1YqsVUpNllm01XEohqdSfsk4Kw0x
 github.com/go-ndarray/ndarray v0.28.0/go.mod h1:bDbGWswQLmTMh6V3LwvKUbpfHzeG4sZDcvuGnA0GC+s=
 github.com/go-nokogiri/nokogiri v0.1.0 h1:3Q3BewGHK16Bt34ggJeyf9xeIMJyA3dmfbIxARPgR9U=
 github.com/go-nokogiri/nokogiri v0.1.0/go.mod h1:zjghooYIK8Xfg+fL4/OUhROslx51xGsM3JKtB2TI0tg=
-github.com/go-notebook/notebook v0.7.0 h1:CgauDBjvr0BBlpPphc9H0NkLaxkLOr4ISBPDJD+pBXI=
-github.com/go-notebook/notebook v0.7.0/go.mod h1:9Ntg+aj6a/DKwAKD75qED+XWJ7+4t65Auwxe0OMwyEw=
+github.com/go-notebook/notebook v0.8.0 h1:znO04L5O8FPk3W1rSVn3CopaefRxeSDn/FTBvoWoI+k=
+github.com/go-notebook/notebook v0.8.0/go.mod h1:N4+uD9yDDgUUXqbu0d6ADGKXq3LOkn2Kis6vXs4ipf4=
 github.com/go-numerics/integrate v0.2.0 h1:IkJhDimTc7nQETCixEvbbHhtOF36GbANBKJI3mJB3Kw=
 github.com/go-numerics/integrate v0.2.0/go.mod h1:ABjpcWy8ZSOg8j6S+7YRsvMJ2LpVkH4E64/CGet2gCw=
 github.com/go-numerics/optimize v0.3.1 h1:eYkT9BpORKSwXnDtEJxXfZ19qJT0cI2RH6xEL3VLZSU=

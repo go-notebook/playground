@@ -79,7 +79,8 @@ const (
 type Cell struct {
 	// Kind is "prose" (Markdown) or "code".
 	Kind string `json:"kind"`
-	// Lang is a code cell's language: "go", "ruby" or "julia".
+	// Lang is a code cell's language: "go", "ruby", "julia", "r"… (the fence
+	// word, as go-notebook's registry knows it).
 	Lang string `json:"lang,omitempty"`
 	// Source is the cell's text, without the fences of a code cell.
 	Source string `json:"source"`
@@ -122,7 +123,7 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 	}
 	s := newSession()
 	out := make([]Result, len(cells))
-	blocked := juliaBlocked(cells)
+	blocked := checkedBlocked(cells)
 	failed := false
 	for i, c := range cells {
 		out[i] = Result{Cell: i, Line: c.Line}
@@ -130,10 +131,11 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			out[i].Skipped = true
 			continue
 		}
-		// A Julia cell is checked, never run, and so are the cells that read
-		// it: each says why, and the others run.
-		if c.Lang == analysis.Julia {
-			msg, checked := juliaCell(c.Source)
+		// A cell of a check-only language (Julia, R) is checked, never run,
+		// and so are the cells that read it: each says why, and the others
+		// run.
+		if !analysis.RunOf(c.Lang).Runs {
+			msg, checked := checkedCell(c.Lang, c.Source)
 			out[i].Error = msg
 			if checked {
 				out[i].Status = StatusNotRun
@@ -141,7 +143,7 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			continue
 		}
 		if j, ok := blocked[i]; ok {
-			out[i].Error = analysis.JuliaBlocked(j)
+			out[i].Error = analysis.RunOf(cells[j].Lang).Blocked(j)
 			out[i].Status = StatusBlocked
 			continue
 		}

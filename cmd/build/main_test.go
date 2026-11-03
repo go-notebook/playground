@@ -248,7 +248,8 @@ func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
 	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
-		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
+		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"},` +
+		`{"name":"r","label":"R","runs":false,"core":"ruby"}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)
 	}
@@ -267,17 +268,17 @@ func (fakeLang) Run() analysis.Run                          { return analysis.Ru
 // A language go-notebook registers reaches the page, and the build accepts
 // its cells' not-run outcome, with no edit to the playground.
 func TestRegisteredLanguage(t *testing.T) {
-	analysis.Register(fakeLang{"r"})
-	defer analysis.Unregister("r")
+	analysis.Register(fakeLang{"zz"})
+	defer analysis.Unregister("zz")
 	ls := languages()
-	if l := ls[len(ls)-1]; l != (language{Name: "r", Label: "R", Runs: false, Core: "ruby"}) {
-		t.Errorf("last language = %+v, want R, checked, on the second core", l)
+	if l := ls[len(ls)-1]; l != (language{Name: "zz", Label: "Zz", Runs: false, Core: "ruby"}) {
+		t.Errorf("last language = %+v, want Zz, checked, on the second core", l)
 	}
-	if cellFailed(engine.Result{Error: "x", Status: engine.StatusNotRun}, "r") {
-		t.Error("a not-run R cell failed the build")
+	if cellFailed(engine.Result{Error: "x", Status: engine.StatusNotRun}, "zz") {
+		t.Error("a not-run zz cell failed the build")
 	}
-	if !cellFailed(engine.Result{Error: "x", Status: engine.StatusBlocked}, "r") {
-		t.Error("a blocked R cell did not fail the build: only a cell that runs can be blocked")
+	if !cellFailed(engine.Result{Error: "x", Status: engine.StatusBlocked}, "zz") {
+		t.Error("a blocked zz cell did not fail the build: only a cell that runs can be blocked")
 	}
 	if label("") != "" {
 		t.Error(`label("") is not empty`)

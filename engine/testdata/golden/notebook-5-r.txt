@@ -1,0 +1,10 @@
+== cell 0 (line 8)
+== cell 1 (line 14)
+-- notrun
+R cells are parsed and checked, but not run yet: execution arrives with go-embedded-r's evaluator (milestones M2 and M3)
+== cell 2 (line 22)
+-- blocked
+blocked: it depends on cell 1, an R cell, and R cells are not run yet
+== cell 3 (line 28)
+-- show
+20

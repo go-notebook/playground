@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-notebook/notebook/analysis"
 	"github.com/go-notebook/notebook/format"
 )
 
@@ -17,9 +18,11 @@ import (
 // MaxNotebook is the largest notebook the page opens or edits, in bytes.
 const MaxNotebook = 1 << 20
 
-// Langs are the languages a code cell may be in, as its fence names them
-// (a Julia cell is parsed and checked, not run).
-var Langs = []string{"go", "ruby", "julia"}
+// Langs are the languages a code cell may be in, as its fence names them:
+// go-notebook's registered languages (a Julia or an R cell is parsed and
+// checked, not run), so that the page's menus, which list the same registry,
+// never offer a language an edit refuses.
+var Langs = analysis.Languages()
 
 // Op is one edit. Index counts every cell, prose included, as Cells returns
 // them.
