@@ -3,8 +3,11 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/go-notebook/notebook/analysis"
 )
 
 // mustEdit applies ops and fails the test on an error.
@@ -144,11 +147,23 @@ func TestEditRefuses(t *testing.T) {
 	}
 }
 
+// Every registered language is one a cell can be switched to and inserted in:
+// the page's menus list the same registry (FuzzEdit found ```r refused).
+func TestLangsAreTheRegistry(t *testing.T) {
+	if !slices.Equal(Langs, analysis.Languages()) || !slices.Contains(Langs, "r") {
+		t.Fatalf("Langs = %v", Langs)
+	}
+	e := mustEdit(t, "```go\nx := 1\n```\n", Op{Op: "lang", Index: 0, Lang: "r"}, Op{Op: "insert", Index: 1, Lang: "r"})
+	if e.Markdown != "```r\nx := 1\n```\n```r\n```\n" {
+		t.Errorf("%q", e.Markdown)
+	}
+}
+
 // Any document reads back byte for byte with no edit; a language change and
 // its reverse give the document back; setting every cell's text to itself
 // changes nothing.
 func FuzzEdit(f *testing.F) {
-	for _, s := range []string{odd, "", "```go\n", "~~~ruby x\n1\n~~~", "a\n```go\n```\n```\n", "   ```go\n1\n   ```\n"} {
+	for _, s := range []string{odd, "", "```go\n", "~~~ruby x\n1\n~~~", "a\n```go\n```\n```\n", "   ```go\n1\n   ```\n", "```r\nx <- 1\n```\n"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, md string) {
@@ -170,7 +185,7 @@ func FuzzEdit(f *testing.F) {
 			if c.Kind != "code" {
 				continue
 			}
-			other := map[string]string{"go": "ruby", "ruby": "julia", "julia": "go"}[c.Lang]
+			other := Langs[(slices.Index(Langs, c.Lang)+1)%len(Langs)] // the next language, round the list
 			there, err := Edit(md, []Op{{Op: "lang", Index: i, Lang: other}})
 			if err != nil {
 				t.Fatal(err)
