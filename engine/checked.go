@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-notebook/notebook/analysis"
+	_ "github.com/go-notebook/notebook/analysis/parsers" // this file's build only: the default core leaves the parsers out
 	"github.com/go-notebook/notebook/format"
 )
 
@@ -14,7 +15,10 @@ import (
 // says it does not run: Julia, until go-embedded-julia has a runtime; R,
 // until go-embedded-r has an evaluator) is parsed and checked as go-notebook
 // does, but not run. The parsers are in the core that runs Ruby cells, which
-// the page loads for any language but Go (noruby.go).
+// the page loads for any language but Go (noruby.go): this file imports
+// analysis/parsers, and the default core, built without it, links neither
+// parser (#23). Both cores know every language's name, so an edit to Julia
+// or R works in either.
 
 // JuliaSupported reports whether this build checks Julia cells.
 const JuliaSupported = true
