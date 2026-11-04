@@ -205,6 +205,219 @@
   }
   window.playgroundLangName = langName; // for web/test/page.mjs
 
+  // ---- Highlighting -----------------------------------------------------
+
+  // A code cell's editor is a <textarea> (the input: focus, caret, IME, undo,
+  // the screen reader) over a <pre aria-hidden> that shows the same text
+  // coloured. The colours come from go-rouge, in Go, never from JavaScript:
+  //   - the build colours every example cell (cmd/build, highlight/), so the
+  //     page is coloured before any WebAssembly loads (examples[].highlight);
+  //   - what is typed is coloured by highlight-worker.js, go-rouge alone in a
+  //     WebAssembly worker of its own, started at the first cell it has to
+  //     colour that the build did not: never queued behind a running notebook.
+  // The lexer is the language's (languages-data's `lexer`, from go-notebook's
+  // registry): a language without one (Julia, R, anything added later until
+  // go-notebook registers it as a Highlighter) is plain text, and one with
+  // one is coloured with no change here.
+  //
+  // The overlay's text is always the textarea's value, exactly, so that each
+  // character is under the one the textarea draws. A keystroke patches the
+  // text into the overlay at once (the typed characters take their
+  // neighbour's colour); the debounced answer replaces it, if it is still
+  // for what the textarea holds (latest wins). The page checks every answer
+  // again before inserting it: spans with a letters-and-digits class and
+  // nothing else, whose text is the cell's.
+  const HL_MAX = 256 << 10; // highlight.MaxSource: a bigger cell is plain text
+  const HL_DEBOUNCE = 50; // ms
+  const HL_CACHE = 400; // answers kept
+  const lexerOf = (lang) => language(lang)?.lexer || '';
+  const hlCache = new Map(); // lexer \0 text -> html ('' is plain text), oldest first
+  const hlKey = (lexer, text) => lexer + '\0' + text;
+  // for web/test/page.mjs: what was asked, and how long each answer took
+  const hlStats = (window.playgroundHighlightStats = { requests: 0, applied: 0, round: [], worker: [], failed: false });
+  function hlRemember(key, html) {
+    hlCache.delete(key);
+    hlCache.set(key, html);
+    if (hlCache.size > HL_CACHE) hlCache.delete(hlCache.keys().next().value);
+  }
+  for (const ex of examples) {
+    ex.cells.forEach((c, i) => {
+      const html = ex.highlight && ex.highlight[i];
+      if (html) hlRemember(hlKey(lexerOf(c.lang), c.source.replace(/\n$/, '')), html);
+    });
+  }
+
+  // hlParse returns html as DOM nodes if it is only text and <span class>
+  // elements (the class letters and digits) with the text of `text`, else null.
+  // A <template> is inert: nothing in it loads or runs.
+  function hlParse(html, text) {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    const ok = [...t.content.childNodes].every(
+      (n) =>
+        n.nodeType === 3 ||
+        (n.nodeType === 1 &&
+          n.nodeName === 'SPAN' &&
+          n.attributes.length === 1 &&
+          /^[a-z0-9]{1,16}$/.test(n.getAttribute('class') || '') &&
+          [...n.childNodes].every((k) => k.nodeType === 3))
+    );
+    return ok && t.content.textContent === text ? t.content : null;
+  }
+
+  // setOverlay shows text coloured as html says, or plain when html is empty
+  // or fails the check.
+  function setOverlay(pre, html, text) {
+    const nodes = html ? hlParse(html, text) : null;
+    if (nodes) pre.replaceChildren(nodes);
+    else pre.textContent = text;
+  }
+
+  // patchOverlay makes the overlay's text `text`, keeping the colours of
+  // what did not change: the text that was there (`old`) and the new one
+  // share a prefix and a suffix; the rest is deleted from the text nodes it
+  // spans, and the new middle goes into the node before the edit. If the
+  // result is not `text`, the overlay is made plain: the equality is what
+  // matters, not the colours.
+  function patchOverlay(pre, old, text) {
+    const max = Math.min(old.length, text.length);
+    let p = 0;
+    while (p < max && old.charCodeAt(p) === text.charCodeAt(p)) p++;
+    let s = 0;
+    while (s < max - p && old.charCodeAt(old.length - 1 - s) === text.charCodeAt(text.length - 1 - s)) s++;
+    const del = old.length - p - s;
+    const ins = text.slice(p, text.length - s);
+    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+    let at = 0;
+    let target = null; // the node holding offset p (the one before it at a boundary)
+    let targetAt = 0;
+    const cuts = [];
+    for (const n of nodes) {
+      const len = n.data.length;
+      if (!target && (p <= at + len) && (p > at || at === 0)) {
+        target = n;
+        targetAt = at;
+      }
+      const from = Math.max(p, at);
+      const to = Math.min(p + del, at + len);
+      if (to > from) cuts.push([n, from - at, to - from]);
+      at += len;
+    }
+    for (const [n, from, count] of cuts.reverse()) n.deleteData(from, count);
+    if (ins) {
+      if (target) target.insertData(p - targetAt, ins);
+      else pre.append(ins);
+    }
+    if (pre.textContent !== text) pre.textContent = text;
+  }
+
+  let hlWorker = null;
+  let hlReady = false;
+  let hlQueue = [];
+  let hlSeq = 1;
+  const hlWait = new Map(); // id -> {done, at}
+
+  function hlFail() {
+    hlStats.failed = true;
+    if (hlWorker) hlWorker.terminate();
+    hlWorker = null;
+    hlQueue = [];
+    hlWait.clear();
+  }
+
+  function hlStart() {
+    hlWorker = new Worker('highlight-worker.js' + (cores.highlight ? '?core=' + encodeURIComponent(cores.highlight) : ''));
+    hlWorker.onerror = hlFail;
+    hlWorker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'ready') {
+        hlReady = true;
+        for (const q of hlQueue) hlWorker.postMessage(q);
+        hlQueue = [];
+      } else if (m.type === 'fatal') hlFail();
+      else if (m.type === 'result') {
+        const w = hlWait.get(m.id);
+        if (!w) return;
+        hlWait.delete(m.id);
+        hlStats.round.push(performance.now() - w.at);
+        hlStats.worker.push(m.ms);
+        w.done(m.html);
+      }
+    };
+  }
+
+  // hlAsk colours text with lexer; done(html) is called with the answer ('' for
+  // plain text). Before the worker is ready only the latest question of each
+  // owner is kept: the others are for text that is already gone.
+  function hlAsk(owner, lexer, text, done) {
+    if (hlStats.failed) return;
+    if (!hlWorker) hlStart();
+    const msg = { id: hlSeq++, lexer, text, owner };
+    hlStats.requests++;
+    hlWait.set(msg.id, { done, at: performance.now() });
+    if (hlReady) {
+      hlWorker.postMessage({ id: msg.id, lexer, text });
+      return;
+    }
+    const old = hlQueue.findIndex((q) => q.owner === owner);
+    if (old >= 0) {
+      hlWait.delete(hlQueue[old].id);
+      hlQueue.splice(old, 1);
+    }
+    hlQueue.push(msg);
+  }
+
+  // codeEditor wraps a code cell's textarea in its overlay, and keeps the
+  // overlay's text the textarea's.
+  function codeEditor(ta, lang) {
+    const lexer = lexerOf(lang);
+    const box = document.createElement('div');
+    box.className = 'editor';
+    const pre = document.createElement('pre');
+    pre.className = 'hl';
+    pre.setAttribute('aria-hidden', 'true');
+    box.append(pre, ta);
+    let shown = '';
+    let latest = 0; // the newest edit: an answer for an older one is dropped
+    let timer = 0;
+    function sync() {
+      const text = ta.value;
+      clearTimeout(timer);
+      const mine = ++latest;
+      patchOverlay(pre, shown, text);
+      shown = text;
+      if (!lexer || text === '') return;
+      if (text.length > HL_MAX) {
+        pre.textContent = text; // too big: plain, as the Go side would say
+        return;
+      }
+      const key = hlKey(lexer, text);
+      if (hlCache.has(key)) {
+        setOverlay(pre, hlCache.get(key), text);
+        return;
+      }
+      timer = setTimeout(
+        () =>
+          hlAsk(box, lexer, text, (html) => {
+            if (mine !== latest || !ta.isConnected) return;
+            hlRemember(key, html);
+            setOverlay(pre, html, text);
+            hlStats.applied++;
+          }),
+        HL_DEBOUNCE
+      );
+    }
+    ta.addEventListener('input', sync);
+    ta.addEventListener('scroll', () => {
+      pre.scrollLeft = ta.scrollLeft;
+      pre.scrollTop = ta.scrollTop;
+    });
+    sync();
+    return box;
+  }
+
   // ---- The notebook -----------------------------------------------------
 
   // nb.markdown is the document; nb.cells are its cells as the format
@@ -517,7 +730,7 @@
     out.className = 'outputs';
     cell.append(h.head);
     if (h.noteEl) cell.append(h.noteEl);
-    cell.append(ta, meta, out);
+    cell.append(codeEditor(ta, lang), meta, out);
     c.el = { cell, meta, out, badge: h.badge, status: h.status, select: h.select, mode: h.mode, editor: ta };
     return cell;
   }

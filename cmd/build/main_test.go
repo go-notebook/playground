@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/go-notebook/playground/engine"
+	"github.com/go-notebook/playground/highlight"
 )
 
 // examples are this repository's statistics notebooks.
@@ -84,7 +85,7 @@ func TestBuild(t *testing.T) {
 	if err := runTo(log, args...); err != nil {
 		t.Fatalf("%v\n%s", err, log)
 	}
-	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "notebooks/1-fit-and-test.md", "cards/1.svg", "cards/5.svg"} {
+	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "highlight-worker.js", "wasm_exec.js", "playground.wasm", "highlight.wasm", "notebooks/1-fit-and-test.md", "cards/1.svg", "cards/5.svg"} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Error(err)
 		}
@@ -108,6 +109,13 @@ func TestBuild(t *testing.T) {
 		` hidden data-signal="1" data-delay="300"`,
 		// each core's URL carries a hash of its bytes
 		`<script id="cores-data" type="application/json">{"go":"playground.wasm?v=`,
+		`"highlight":"highlight.wasm?v=`,
+		// the example cells, coloured at build time (the page is coloured
+		// before any WebAssembly loads), and each language's lexer
+		`"highlight":["`,
+		`<span class=\"k\">import</span>`,
+		`{"name":"go","label":"Go","runs":true,"core":"go","lexer":"go"}`,
+		`{"name":"julia","label":"Julia","runs":false,"core":"ruby","lexer":""}`,
 	} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("index.html lacks %s", want)
@@ -246,10 +254,12 @@ func TestFailed(t *testing.T) {
 // that run, then those only checked.
 func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
-	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
-		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
-		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"},` +
-		`{"name":"r","label":"R","runs":false,"core":"ruby"}]`
+	// the lexer is go-notebook's (analysis.Highlighter); Julia and R have none
+	// until go-notebook registers them as Highlighters
+	want := `[{"name":"go","label":"Go","runs":true,"core":"go","lexer":"go"},` +
+		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby","lexer":"ruby"},` +
+		`{"name":"julia","label":"Julia","runs":false,"core":"ruby","lexer":""},` +
+		`{"name":"r","label":"R","runs":false,"core":"ruby","lexer":""}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)
 	}
@@ -282,6 +292,55 @@ func TestRegisteredLanguage(t *testing.T) {
 	}
 	if label("") != "" {
 		t.Error(`label("") is not empty`)
+	}
+}
+
+// fakeHighlighted is a language that is a Highlighter, as notebook will
+// register Julia and R once go-rouge has their lexers.
+type fakeHighlighted struct {
+	fakeLang
+	lexer string
+}
+
+func (l fakeHighlighted) Lexer() string { return l.lexer }
+
+// A language registered as a Highlighter reaches the page with its lexer, and
+// its cells are coloured at build time, with no edit to the playground.
+func TestRegisteredHighlighter(t *testing.T) {
+	analysis.Register(fakeHighlighted{fakeLang{"zz"}, "c"})
+	defer analysis.Unregister("zz")
+	ls := languages()
+	if l := ls[len(ls)-1]; l.Name != "zz" || l.Lexer != "c" {
+		t.Errorf("last language = %+v, want zz with the lexer c", l)
+	}
+	got := highlightCells([]engine.Cell{{Kind: "code", Lang: "zz", Source: "int x; /* < */\n"}}, ls)
+	if want := `<span class="kt">int</span> x<span class="p">;</span> <span class="cm">/* &lt; */</span>`; got[0] != want {
+		t.Errorf("a zz cell = %q, want %q", got[0], want)
+	}
+}
+
+// The example cells are coloured as the editor shows them: prose, a language
+// without a lexer, an unknown language, a cell over the cap and a cell the
+// check refuses stay "", and a cell with no language is Go.
+func TestHighlightCells(t *testing.T) {
+	cells := []engine.Cell{
+		{Kind: "prose", Source: "# `x < 1`\n"},
+		{Kind: "code", Lang: "go", Source: "x := 1 < 2\n"},
+		{Kind: "code", Source: "return\n"},
+		{Kind: "code", Lang: "julia", Source: "x = 1\n"},
+		{Kind: "code", Lang: "nope", Source: "x = 1\n"},
+		{Kind: "code", Lang: "go", Source: strings.Repeat("a", highlight.MaxSource+1) + "\n"},
+		{Kind: "code", Lang: "go", Source: "x := 1\r\n"},
+	}
+	got := highlightCells(cells, languages())
+	want := []string{
+		"",
+		`<span class="n">x</span> <span class="o">:=</span> <span class="m">1</span> <span class="o">&lt;</span> <span class="m">2</span>`,
+		`<span class="k">return</span>`,
+		"", "", "", "",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("highlightCells = %q\nwant %q", got, want)
 	}
 }
 
@@ -323,6 +382,18 @@ func TestWriteErrors(t *testing.T) {
 			}
 			return fakeGo(root)(env, args...)
 		}, err: "playground-ruby.wasm"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, highlightPkg) {
+				return nil, errors.New("no rouge")
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "building the highlighter: no rouge"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, highlightPkg) {
+				return nil, nil // built nothing
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "highlight.wasm"},
 	} {
 		out := t.TempDir()
 		if tc.block != "" {

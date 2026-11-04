@@ -10,6 +10,7 @@ require (
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
 	github.com/go-plot/plot v0.1.1
+	github.com/go-rouge/rouge v0.7.1
 	github.com/go-scikit/ruby v0.2.1
 	github.com/go-statistics/stats v0.1.0
 	github.com/spf13/cobra v1.10.2
@@ -124,7 +125,6 @@ require (
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
 	github.com/go-regexp/engine v0.3.2 // indirect
 	github.com/go-richdoc/richdoc v0.4.0 // indirect
-	github.com/go-rouge/rouge v0.7.1 // indirect
 	github.com/go-ruby-aasm/aasm v0.0.0-20261025185733-ae3deccc721d // indirect
 	github.com/go-ruby-abbrev/abbrev v0.0.0-20261025185738-0c54549fd16a // indirect
 	github.com/go-ruby-acme/acme v0.0.0-20261025190735-e5aebae8127c // indirect

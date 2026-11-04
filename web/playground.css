@@ -8,6 +8,9 @@
   --error: #b3261e;
   --error-bg: #fdf0ef;
   --link: var(--accent);
+  /* the syntax colours of go-notebook's HTML export (export/html.go), one
+     palette for the page and the exported file; light, then dark */
+  --hl-key: #8f2f8a; --hl-str: #2f7d32; --hl-num: #a3541a; --hl-com: #7a7f86; --hl-fn: #1f5fa8; --hl-type: #00758f;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -21,6 +24,7 @@
     --error: #ff8a80;
     --error-bg: #2a1716;
     --link: var(--accent-bright);
+    --hl-key: #d49bd0; --hl-str: #9ccc8f; --hl-num: #e0a671; --hl-com: #8a9098; --hl-fn: #8fb8ec; --hl-type: #5fc1d6;
   }
   .figure { background: #ffffff; } /* figures are drawn on white */
 }
@@ -134,6 +138,39 @@ button:disabled { opacity: .55; cursor: default; }
   white-space: pre; overflow-x: auto;
 }
 .cell textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The code editor: the textarea stays the input (focus, caret, selection, IME,
+   undo, the screen reader), its text transparent; behind it a <pre
+   aria-hidden> shows the same text coloured (playground.js, highlight/). The
+   two have the same box, font, tab size and wrapping, so every character is
+   where the textarea puts it, and the pre scrolls with the textarea. */
+.editor { position: relative; }
+.editor .hl {
+  position: absolute; inset: 0; margin: 0; overflow: hidden; pointer-events: none;
+  padding: 10px 12px; border: 1px solid transparent; border-left: 3px solid transparent;
+  border-radius: 6px; background: var(--code-bg); color: var(--fg);
+  line-height: 1.45; tab-size: 4; -moz-tab-size: 4; white-space: pre;
+  font-kerning: none; font-variant-ligatures: none;
+}
+.editor textarea {
+  position: relative; background: transparent; color: transparent; caret-color: var(--fg);
+  font-kerning: none; font-variant-ligatures: none;
+}
+.editor textarea::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+/* Rouge's token classes, coloured as the HTML export colours them (the
+   export's italic comments are left out: a slanted face can be a different
+   width, and the colours must stay under the textarea's characters). */
+.hl .k, .hl .kd, .hl .kn, .hl .kr, .hl .kc { color: var(--hl-key); }
+.hl .kt, .hl .nc { color: var(--hl-type); }
+.hl .s, .hl .s1, .hl .s2, .hl .sb, .hl .sc, .hl .se, .hl .dl, .hl .ss, .hl .si, .hl .sr { color: var(--hl-str); }
+.hl .no, .hl .vi, .hl .vg, .hl .vc { color: var(--hl-type); }
+.hl .m, .hl .mi, .hl .mf, .hl .mh, .hl .mo, .hl .mb { color: var(--hl-num); }
+.hl .c, .hl .c1, .hl .cm, .hl .cp { color: var(--hl-com); }
+.hl .nf, .hl .nb, .hl .bp { color: var(--hl-fn); }
+/* Forced colours replace both layers' colours: the textarea alone is shown. */
+@media (forced-colors: active) {
+  .editor .hl { display: none; }
+  .editor textarea { color: CanvasText; background: Canvas; }
+}
 .cell .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0 4px; min-height: 1em; }
 .output {
   margin: 6px 0 0; padding: 8px 12px; background: var(--surface); border-radius: 6px;

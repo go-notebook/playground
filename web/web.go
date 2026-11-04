@@ -9,8 +9,9 @@ package web
 
 import "embed"
 
-// Files holds index.html (a text/template), playground.css, playground.js
-// and worker.js.
+// Files holds index.html (a text/template), playground.css, playground.js,
+// worker.js (the core's) and highlight-worker.js (the editors' highlighter,
+// go-rouge in a worker of its own).
 //
-//go:embed index.html playground.css playground.js worker.js
+//go:embed index.html playground.css playground.js worker.js highlight-worker.js
 var Files embed.FS

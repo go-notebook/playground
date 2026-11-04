@@ -36,11 +36,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/go-notebook/playground/engine"
+	"github.com/go-notebook/playground/highlight"
 	"github.com/go-notebook/playground/web"
 )
 
-// corePkg is the package of the WebAssembly core.
-const corePkg = "github.com/go-notebook/playground/cmd/playground"
+// corePkg is the package of the WebAssembly core, and highlightPkg that of
+// the editors' highlighter (go-rouge only, in a worker of its own).
+const (
+	corePkg      = "github.com/go-notebook/playground/cmd/playground"
+	highlightPkg = "github.com/go-notebook/playground/cmd/highlight"
+)
 
 // config is what the flags say, and where the command writes.
 type config struct {
@@ -189,6 +194,11 @@ type example struct {
 	Name  string        `json:"name"`
 	Title string        `json:"title"`
 	Cells []engine.Cell `json:"cells"`
+	// Highlight is each cell's source as the editor shows it (without the
+	// last newline), coloured by go-rouge at build time so that the page is
+	// highlighted before any WebAssembly loads: HTML made of spans, or ""
+	// for a cell shown as plain text (prose, a language without a lexer).
+	Highlight []string `json:"highlight"`
 	// Markdown is the notebook as written: what the page edits through the
 	// format package, and what Download gives back byte for byte.
 	Markdown string `json:"markdown"`
@@ -223,7 +233,8 @@ func build(c config) error {
 		if len(src) > engine.MaxNotebook {
 			return fmt.Errorf("%s is %d bytes; the page edits notebooks up to %d", path, len(src), engine.MaxNotebook)
 		}
-		exs = append(exs, example{Name: name, Title: title(string(src), name), Cells: engine.Cells(string(src)), Markdown: string(src)})
+		cells := engine.Cells(string(src))
+		exs = append(exs, example{Name: name, Title: title(string(src), name), Cells: cells, Highlight: highlightCells(cells, languages()), Markdown: string(src)})
 	}
 
 	if err := os.MkdirAll(filepath.Join(c.out, "notebooks"), 0o755); err != nil {
@@ -250,6 +261,13 @@ func build(c config) error {
 		"build", "-trimpath", "-tags=ruby,rbgo_core", "-ldflags=-s -w", "-o", rubyWasm, corePkg); err != nil {
 		return fmt.Errorf("building the Ruby WebAssembly core: %w", err)
 	}
+	// The editors' highlighter: go-rouge alone, a few MB, in a worker of its
+	// own, so that colouring a keystroke never waits for a running notebook.
+	highlightWasm := filepath.Join(c.out, "highlight.wasm")
+	if _, err := goCmd([]string{"GOOS=js", "GOARCH=wasm", "GOWORK=off"},
+		"build", "-trimpath", "-ldflags=-s -w", "-o", highlightWasm, highlightPkg); err != nil {
+		return fmt.Errorf("building the highlighter: %w", err)
+	}
 	root, err := goCmd(nil, "env", "GOROOT")
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
@@ -266,7 +284,7 @@ func build(c config) error {
 	// same core, so the worker may use a copy the browser holds whatever its
 	// age (see web/worker.js), and a new build is a new URL.
 	cores, sizes := map[string]string{}, map[string]int64{}
-	for _, core := range []struct{ key, path string }{{"go", wasm}, {"ruby", rubyWasm}} { // in this order: a map would fail in any
+	for _, core := range []struct{ key, path string }{{"go", wasm}, {"ruby", rubyWasm}, {"highlight", highlightWasm}} { // in this order: a map would fail in any
 		u, size, err := coreURL(core.path)
 		if err != nil {
 			return err
@@ -276,7 +294,7 @@ func build(c config) error {
 	coresJSON, _ := json.Marshal(cores) // strings always encode
 
 	// The page.
-	for _, name := range []string{"playground.css", "playground.js", "worker.js"} {
+	for _, name := range []string{"playground.css", "playground.js", "worker.js", "highlight-worker.js"} {
 		b, _ := web.Files.ReadFile(name) // embedded
 		if err := os.WriteFile(filepath.Join(c.out, name), b, 0o644); err != nil {
 			return err
@@ -310,8 +328,8 @@ func build(c config) error {
 		return err
 	}
 
-	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
-		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6)
+	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB, highlight.wasm %.1f MB\n",
+		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6, float64(sizes["highlight"])/1e6)
 	return nil
 }
 
@@ -323,6 +341,32 @@ type language struct {
 	Label string `json:"label"`
 	Runs  bool   `json:"runs"`
 	Core  string `json:"core"`
+	// Lexer is the go-rouge lexer that colours its cells' editors, as
+	// go-notebook's registry names it (analysis.Highlighter); "" when the
+	// language has none, and its cells are plain text.
+	Lexer string `json:"lexer"`
+}
+
+// highlightCells colours each code cell's source, as the editor shows it
+// (without the last newline), with the lexer of its language (no lang is
+// Go): one entry per cell, "" where the cell is plain text.
+func highlightCells(cells []engine.Cell, langs []language) []string {
+	lexers := map[string]string{}
+	for _, l := range langs {
+		lexers[l.Name] = l.Lexer
+	}
+	out := make([]string, len(cells))
+	for i, c := range cells {
+		if c.Kind != "code" {
+			continue
+		}
+		lang := c.Lang
+		if lang == "" {
+			lang = analysis.Go
+		}
+		out[i], _ = highlight.HTML(lexers[lang], strings.TrimSuffix(c.Source, "\n"))
+	}
+	return out
 }
 
 // languages are the languages go-notebook registers (analysis.Languages), so
@@ -336,7 +380,11 @@ func languages() []language {
 		if name == analysis.Go {
 			core = "go"
 		}
-		out = append(out, language{Name: name, Label: label(name), Runs: analysis.RunOf(name).Runs, Core: core})
+		lexer := ""
+		if h, ok := analysis.Lookup(name).(analysis.Highlighter); ok {
+			lexer = h.Lexer()
+		}
+		out = append(out, language{Name: name, Label: label(name), Runs: analysis.RunOf(name).Runs, Core: core, Lexer: lexer})
 	}
 	// The menus' order: Go, the default, then the languages that run, then
 	// those only checked; by name within each.
