@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/webcanvas"
 )
 
@@ -57,6 +58,14 @@ func TestACellOpensWithItsCaretAtTheStart(t *testing.T) {
 	c, _ := newCell(t, "first\nsecond")
 	if a, f := c.Selection(); a != 0 || f != 0 {
 		t.Fatalf("caret %d,%d, want 0,0", a, f)
+	}
+	// and the view shows the first column, however long the first line is
+	long, _ := newCell(t, strings.Repeat("long line ", 100))
+	frame(long)
+	short, _ := newCell(t, "x")
+	frame(short)
+	if lx, _ := long.ed.CaretPixel(0, 0); func() bool { sx, _ := short.ed.CaretPixel(0, 0); return lx != sx }() {
+		t.Fatalf("a long first line opens scrolled: first column at x=%d", lx)
 	}
 }
 
@@ -184,26 +193,45 @@ func TestHeightWithoutAListener(t *testing.T) {
 	}
 }
 
-func TestPixelRatioScalesTheHeight(t *testing.T) {
-	c, h := newCell(t, "a\nb")
-	frame(c)
-	css := c.HeightCSS()
-	c.SetPixelRatio(1) // unchanged: no report
-	if len(h.heights) != 0 {
-		t.Fatalf("heard %v", h.heights)
+// The toolkit's metric scale is global, so what a cell says its height is, in
+// CSS pixels, must not depend on which cell set the scale or when: a cell made
+// before the scale moved, one made after, and one that has not drawn since all
+// say the same.
+func TestTheCSSHeightDoesNotDependOnWhoSetTheScale(t *testing.T) {
+	defer toolkit.SetMetricScale(toolkit.MetricScale())
+	toolkit.SetMetricScale(1)
+	a, _ := newCell(t, "a\nb\nc")
+	frame(a)
+	want := a.HeightCSS()
+	if want <= 0 {
+		t.Fatalf("height %v", want)
 	}
-	c.SetPixelRatio(2)
-	frame(c)
-	if len(h.heights) == 0 {
-		t.Fatal("a new ratio reported no height")
+	a.SetPixelRatio(2) // a is mounted at ratio 2: the scale is the process's now
+	if got := a.HeightCSS(); got != want {
+		t.Errorf("a, before it drew again, says %v CSS px; at ratio 1 it said %v", got, want)
 	}
-	// the CSS height is the layout's device height over the ratio, and what was
-	// last reported is what the page sets
-	want := float64(c.ed.PreferredHeight().Get()) / 2
-	if got := c.HeightCSS(); got != want || h.heights[len(h.heights)-1] != want || want <= 0 {
-		t.Fatalf("CSS height %v, reported %v, layout says %v (ratio 1 gave %v)", got, h.heights, want, css)
+	b, _ := newCell(t, "a\nb\nc") // made after the scale moved
+	if got := b.HeightCSS(); got != want {
+		t.Errorf("a cell created at ratio 2 says %v CSS px, want %v", got, want)
 	}
-	c.SetPixelRatio(1)
+	frame(a)
+	frame(b)
+	if ga, gb := a.HeightCSS(), b.HeightCSS(); ga != want || gb != want {
+		t.Errorf("after a frame: a %v, b %v CSS px, want %v", ga, gb, want)
+	}
+	// and the page hears the same number from either when the text grows
+	var heard []float64
+	b.onHeight = func(f float64) { heard = append(heard, f) }
+	b.SetText("a\nb\nc\nd")
+	frame(b)
+	if len(heard) == 0 || heard[len(heard)-1] <= want {
+		t.Errorf("a longer text reported %v after %v", heard, want)
+	}
+	c, _ := newCell(t, "a\nb\nc\nd")
+	toolkit.SetMetricScale(1) // the scale moves back; c was laid out at 2
+	if got, w := c.HeightCSS(), heard[len(heard)-1]; got != w {
+		t.Errorf("a cell laid out at ratio 2 says %v CSS px after the scale went back to 1, want %v", got, w)
+	}
 }
 
 func TestReplayedPointerEventsDoNotMoveTheCaret(t *testing.T) {
@@ -245,7 +273,7 @@ func TestSelectionIsInUTF16Units(t *testing.T) {
 	}
 }
 
-func TestOnlyAHorizontalGestureIsTheEditors(t *testing.T) {
+func TestOnlyAHorizontalGestureThatMovesTheTextIsTheEditors(t *testing.T) {
 	c, _ := newCell(t, strings.Repeat("long line ", 100))
 	frame(c)
 	for _, w := range [][2]int{{0, 3}, {0, -3}, {0, 0}, {1, 5}} { // dx, dy
@@ -253,9 +281,29 @@ func TestOnlyAHorizontalGestureIsTheEditors(t *testing.T) {
 			t.Fatalf("wheel dx=%d dy=%d was taken (repaint %v, consumed %v): the page must scroll", w[0], w[1], r, used)
 		}
 	}
-	for _, w := range [][2]int{{4, 0}, {-4, 1}, {5, 5}} {
-		if r, used := c.Scroll(10, 10, w[0], w[1]); !r || !used {
-			t.Fatalf("horizontal wheel dx=%d dy=%d was left to the page", w[0], w[1])
+	// at the start, a leftward swipe has nowhere to go: the page's (swipe back)
+	if r, used := c.Scroll(10, 10, -4, 0); r || used {
+		t.Fatalf("a leftward wheel at the start was taken (%v, %v)", r, used)
+	}
+	if r, used := c.Scroll(10, 10, 4, 0); !r || !used {
+		t.Fatal("a rightward wheel over a long line was left to the page")
+	}
+	if r, used := c.Scroll(10, 10, -4, 1); !r || !used {
+		t.Fatal("a leftward wheel after scrolling right was left to the page")
+	}
+	// at the far end, a rightward swipe has nowhere to go either
+	for i := 0; i < 100; i++ {
+		c.Scroll(10, 10, 50, 0)
+	}
+	if r, used := c.Scroll(10, 10, 5, 0); r || used {
+		t.Fatalf("a rightward wheel at the end was taken (%v, %v)", r, used)
+	}
+	// lines that fit: no wheel is the editor's, however it leads
+	short, _ := newCell(t, "x := 1")
+	frame(short)
+	for _, w := range [][2]int{{5, 0}, {-5, 0}, {9, 1}} {
+		if r, used := short.Scroll(10, 10, w[0], w[1]); r || used {
+			t.Fatalf("a horizontal wheel dx=%d over a line that fits was taken (%v, %v)", w[0], r, used)
 		}
 	}
 	if c.Context(1, 1) {

@@ -44,8 +44,7 @@ type Cell struct {
 	ed    *toolkit.CodeEditor
 	theme *toolkit.Theme
 
-	w, h  int     // surface, in device pixels
-	ratio float64 // device pixels per CSS pixel
+	w, h int // surface, in device pixels
 
 	mods       webcanvas.Modifiers
 	buttonHeld bool
@@ -54,7 +53,8 @@ type Cell struct {
 	last     string // the text OnChange last heard
 	onChange func(text string)
 	onHeight func(css float64)
-	height   int // preferred height, device pixels, as of the last report
+	height   int     // preferred height, device pixels, as of the last report
+	hscale   float64 // the toolkit's metric scale when height was laid out
 
 	request atomic.Pointer[func()]
 }
@@ -87,7 +87,7 @@ type Config struct {
 
 // New is a Cell with cfg. A text over MaxText is cut on a rune boundary.
 func New(cfg Config) *Cell {
-	c := &Cell{ratio: 1, onChange: cfg.OnChange, onHeight: cfg.OnHeight}
+	c := &Cell{onChange: cfg.OnChange, onHeight: cfg.OnHeight}
 	c.w, c.h = startW, startH
 	c.ed = toolkit.NewCodeEditor(Bound(cfg.Text))
 	c.ed.NoVerticalScroll = true
@@ -99,9 +99,10 @@ func New(cfg Config) *Cell {
 	// at the start, as a text area does, so that a long first line shows its
 	// first column.
 	c.ed.SetInputSelection(0, 0)
+	c.ed.ScrollX().Set(0) // the scroll that put the old caret in view
 	c.SetDark(cfg.Dark)
 	c.last = c.ed.InputText()
-	c.height = c.ed.PreferredHeight().Get()
+	c.height, c.hscale = c.ed.PreferredHeight().Get(), toolkit.MetricScale()
 	c.ed.PreferredHeight().Subscribe(func(int) { c.reportHeight() })
 	return c
 }
@@ -174,13 +175,18 @@ func (c *Cell) SetFocused(f bool) {
 	c.repaint()
 }
 
-// HeightCSS is the height the cell wants, in CSS pixels.
-func (c *Cell) HeightCSS() float64 { return float64(c.height) / c.ratio }
+// HeightCSS is the height the cell wants, in CSS pixels: the layout's height in
+// device pixels over the metric scale it was laid out at. The two are read
+// together, because the toolkit's scale is global and may have moved since (a
+// cell created, or mounted, at another ratio) while this cell's layout has not
+// been refreshed yet; the layout is linear in the scale, so the quotient does
+// not change.
+func (c *Cell) HeightCSS() float64 { return float64(c.height) / c.hscale }
 
 // reportHeight tells the page the preferred height; the Observable it is
 // subscribed to fires only when the height changed.
 func (c *Cell) reportHeight() {
-	c.height = c.ed.PreferredHeight().Get()
+	c.height, c.hscale = c.ed.PreferredHeight().Get(), toolkit.MetricScale()
 	if c.onHeight != nil {
 		c.onHeight(c.HeightCSS())
 	}
@@ -310,17 +316,24 @@ func (c *Cell) code(key string) string {
 func (c *Cell) Modifiers(m webcanvas.Modifiers) { c.mods = m }
 
 // Scroll is the wheel. The cell has no vertical scroll (it is as tall as its
-// text), so the wheel is the page's; only a horizontal gesture over a line that
-// overflows the width is the editor's. A wheel with both a vertical and a
-// horizontal part belongs to the page unless the horizontal part leads.
+// text), so the wheel is the page's; only a horizontal gesture is the editor's,
+// and only while it moves the text: a horizontal wheel over a cell whose lines
+// fit, or that is already at the end it points to, is left to the page (the
+// browser's swipe back, a wide page's own scroll). A wheel with both a vertical
+// and a horizontal part belongs to the page unless the horizontal part leads.
 func (c *Cell) Scroll(x, y, dx, dy int) (repaint, consumed bool) {
 	if dx == 0 || abs(dx) < abs(dy) {
 		return false, false
 	}
+	// Where the first column is drawn says whether the text moved, clamped as
+	// Draw clamps it (the raw scroll offset may be stale).
+	before, _ := c.ed.CaretPixel(0, 0)
 	ev := c.event(toolkit.EventScroll, x, y)
 	ev.DeltaX = dx
 	c.ed.OnEvent(ev)
-	return true, true
+	after, _ := c.ed.CaretPixel(0, 0)
+	moved := after != before
+	return moved, moved
 }
 
 func abs(n int) int {
@@ -342,16 +355,15 @@ func (c *Cell) Resize(w, h int) (int, int) {
 
 // SetPixelRatio is the device pixel ratio. The toolkit's metrics (font, line
 // pitch, gutter) scale with it, so the text is crisp on a dense display.
+//
+// The metric scale is the toolkit's, and it is global: every cell on the page
+// draws at the scale the last mounted one set. So a cell keeps no ratio of its
+// own; the height it reports in CSS pixels is its layout's device height over
+// the scale that layout was made at (see HeightCSS), which is the same number
+// whichever cell set the scale, and whenever.
 func (c *Cell) SetPixelRatio(r float64) {
-	if r == c.ratio {
-		return
-	}
-	c.ratio = r
 	toolkit.SetMetricScale(r)
-	c.height = c.ed.PreferredHeight().Get()
-	if c.onHeight != nil {
-		c.onHeight(c.HeightCSS())
-	}
+	c.repaint()
 }
 
 // RepaintWith keeps webcanvas's way to ask for a frame.
