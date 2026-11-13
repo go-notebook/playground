@@ -1,25 +1,25 @@
 module github.com/go-notebook/playground
 
-go 1.27.3
+go 1.27.4
 
 require (
-	github.com/go-fleettools/landingkit v0.18.0
-	github.com/go-ndarray/ndarray v0.28.0
+	github.com/go-fleettools/landingkit v0.26.0
+	github.com/go-ndarray/ndarray v0.41.0
 	github.com/go-notebook/notebook v0.14.0
-	github.com/go-numerics/integrate v0.2.0
-	github.com/go-numerics/optimize v0.3.1
-	github.com/go-numerics/special v0.2.0
-	github.com/go-plot/plot v0.1.1
+	github.com/go-numerics/integrate v0.2.2
+	github.com/go-numerics/optimize v0.9.0
+	github.com/go-numerics/special v0.13.0
+	github.com/go-plot/plot v0.3.1
 	github.com/go-scikit/ruby v0.2.1
-	github.com/go-statistics/stats v0.1.0
-	github.com/go-widgets/painter v0.17.0
+	github.com/go-statistics/stats v0.1.1
+	github.com/go-widgets/painter v0.17.1
 	github.com/go-widgets/textinput v0.1.1
-	github.com/go-widgets/toolkit v0.374.3
+	github.com/go-widgets/toolkit v0.374.11
 	github.com/go-widgets/toolkit/rougelex v0.2.0
 	github.com/go-widgets/webcanvas v0.14.3
 	github.com/go-widgets/window v0.93.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/traefik/yaegi v0.16.1
 )
 
@@ -104,7 +104,7 @@ require (
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
-	github.com/go-fft/fft v0.28.6 // indirect
+	github.com/go-fft/fft v0.29.0 // indirect
 	github.com/go-gfx/gfx v0.41.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
@@ -312,8 +312,10 @@ require (
 	github.com/go-simd/adler32 v0.1.0 // indirect
 	github.com/go-simd/base64 v0.1.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
+	github.com/go-simd/floats v0.17.0 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
+	github.com/go-sparse/sparse v0.3.0 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
 	github.com/go-typeset/bidi v0.3.1 // indirect
