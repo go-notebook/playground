@@ -8,6 +8,24 @@ import (
 	"github.com/go-notebook/notebook/analysis"
 )
 
+// The page's R is the registry's R with only its run capability changed: not
+// run, not isolated, and still highlighted with the r lexer (#29).
+func TestPageR(t *testing.T) {
+	r := analysis.Lookup("r")
+	if _, ok := r.(pageR); !ok {
+		t.Fatalf("the registry's R is %T, want the page's", r)
+	}
+	if h, ok := r.(analysis.Highlighter); !ok || h.Lexer() != "r" {
+		t.Errorf("R is not highlighted with the r lexer: %v", ok)
+	}
+	if _, ok := r.(analysis.Isolated); ok {
+		t.Error("R is isolated: a cell that reads an R name would not be blocked")
+	}
+	if analysis.RunOf("r").Runs {
+		t.Error("the page runs R cells")
+	}
+}
+
 // An R cell is checked, not run, through go-notebook's registry alone: the
 // cells that read it are blocked, with R's message, also when a Julia cell
 // blocks others in the same notebook; the others run.

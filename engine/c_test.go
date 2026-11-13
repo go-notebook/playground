@@ -64,8 +64,8 @@ func TestCCellsAreSequential(t *testing.T) {
 }
 
 // Cell source is untrusted: a macro whose expansion doubles 40 times, and a
-// cell over go-notebook's size bound, are refused in a moment, as errors, and
-// the cell after them is not affected.
+// cell over go-notebook's size bound, are refused, as errors, in well under a
+// minute even under emulation, and the cell after them is not affected.
 func TestCCellsAreBounded(t *testing.T) {
 	var bomb strings.Builder
 	bomb.WriteString("#define D0(a) (a)\n")
@@ -77,7 +77,9 @@ func TestCCellsAreBounded(t *testing.T) {
 	for name, src := range map[string]string{"macro bomb": bomb.String(), "oversized": huge} {
 		start := time.Now()
 		res := Run("```c\n" + src + "```\n```go\n1 + 1\n```\n")
-		if took := time.Since(start); took > 10*time.Second {
+		// 0.2 s natively; 11 s under qemu (riscv64, s390x). Unbounded expansion
+		// would take hours, so this only has to tell a bound from a hang.
+		if took := time.Since(start); took > 90*time.Second {
 			t.Errorf("%s: took %v", name, took)
 		}
 		if res[0].Error == "" || res[0].Status != "" || res[1].Error != "" {
