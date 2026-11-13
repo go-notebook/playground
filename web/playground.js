@@ -92,6 +92,8 @@
         updateBadges();
         for (const q of queue) worker.postMessage(q);
         queue = [];
+        // The editor comes after the first runtime, so that it never delays it.
+        if (!window.gonbNoEditor) (window.requestIdleCallback || setTimeout)(() => loadEditor());
         return;
       }
       if (m.type === 'fatal') {
@@ -367,6 +369,8 @@
   // ---- Rendering --------------------------------------------------------
 
   function render() {
+    for (const s of surfaces) s.destroy();
+    surfaces.clear();
     article.textContent = '';
     nb.cells.forEach((c, i) => {
       article.append(addControl(i));
@@ -374,6 +378,202 @@
     });
     article.append(addControl(nb.cells.length, 'add-end'));
     updateBadges();
+    for (const c of nb.cells) if (c.kind === 'code') enhance(c);
+  }
+
+  // ---- The code editor ----------------------------------------------------
+
+  // Progressive enhancement. A code cell is a <textarea> first, as it always
+  // was. When the editor (editor.wasm, on this thread: cmd/editor) has loaded,
+  // each code cell gets a <canvas> that the editor draws on, and the textarea
+  // is hidden, not removed: it still holds the cell's text (the tests and the
+  // page's own code read it) and is what a cell shows while it is off screen.
+  // If the editor does not load, nothing changed.
+  //
+  // The editor's text reaches the page as a string and the DOM only as the
+  // textContent of the mirror webcanvas makes; nothing here builds markup from
+  // a cell.
+  const editorInfo = JSON.parse(($('editor-data') || { textContent: 'null' }).textContent);
+  let editorReady = false;
+  const surfaces = new Set();
+  const byCell = new Map(); // a cell's <section> -> its surface
+  const dark = window.matchMedia('(prefers-color-scheme: dark)');
+  // Cells that are far off screen give their canvas back (width 0) and show
+  // their textarea; window.gonbNoIO is a switch for the memory measurement.
+  const io =
+    'IntersectionObserver' in window && !window.gonbNoIO
+      ? new IntersectionObserver(
+          (entries) => {
+            for (const en of entries) {
+              const s = byCell.get(en.target);
+              if (!s) continue;
+              if (en.isIntersecting) s.mount();
+              else if (!s.holdsFocus()) s.unmount();
+            }
+          },
+          { rootMargin: '400px 0px' }
+        )
+      : null;
+  window.playgroundEditor = { surfaces, io: !!io }; // for web/test
+
+  // A cell's height changed: that surface lays itself out again at its canvas's
+  // new CSS box (Surface.Resize), and no other does. It runs after the event
+  // that caused it, never in the middle of it.
+  const resizeQueued = new Set();
+  function relayout(handle) {
+    if (resizeQueued.has(handle)) return;
+    resizeQueued.add(handle);
+    queueMicrotask(() => {
+      resizeQueued.delete(handle);
+      handle.resize();
+    });
+  }
+  // The article's width changed (the window, a sidebar): every mounted surface
+  // follows it.
+  let articleWidth = 0;
+  new ResizeObserver(() => {
+    if (article.clientWidth === articleWidth) return;
+    articleWidth = article.clientWidth;
+    for (const s of surfaces) if (s.mounted) s.handle.resize();
+  }).observe(article);
+  dark.addEventListener('change', () => {
+    for (const s of surfaces) s.handle.setDark(dark.matches);
+  });
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('could not load ' + src));
+      document.head.append(s);
+    });
+  }
+
+  let editorLoading = false;
+  async function loadEditor() {
+    if (editorLoading || !editorInfo || !window.WebAssembly) return;
+    editorLoading = true;
+    try {
+      await loadScript('wasm_exec.js');
+      const go = new Go();
+      const up = new Promise((resolve) => (window.gonbEditorReady = resolve));
+      let result;
+      try {
+        result = await WebAssembly.instantiateStreaming(fetch(editorInfo.url), go.importObject);
+      } catch (e) {
+        // a server that does not say application/wasm: compile from the bytes
+        result = await WebAssembly.instantiate(await (await fetch(editorInfo.url)).arrayBuffer(), go.importObject);
+      }
+      go.run(result.instance);
+      await up;
+      editorReady = true;
+      timings.editorReady = performance.now();
+      if (nb) for (const c of nb.cells) if (c.kind === 'code') enhance(c);
+    } catch (e) {
+      // the textarea page is what remains
+      timings.editorError = String(e);
+      console.warn('the code editor did not load; the cells stay text areas:', e);
+    }
+  }
+  window.playgroundLoadEditor = loadEditor; // for web/test
+
+  // enhance gives a code cell its surface, keeping its caret and its focus.
+  function enhance(c) {
+    const el = c.el;
+    if (!editorReady || !el || !el.editor || el.handle) return;
+    const ta = el.editor;
+    const cell = el.cell;
+    const index = +cell.dataset.index;
+    const lang = c.lang || 'go';
+    const box = document.createElement('div');
+    box.className = 'code-surface';
+    box.hidden = true;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'code-canvas';
+    box.append(canvas);
+    ta.before(box);
+    let mounted = false;
+    let handle = null;
+    const size = (css) => {
+      canvas.style.height = css + 'px';
+      ta.style.height = css + 'px';
+      if (handle) relayout(handle);
+    };
+    handle = window.gonbEditor.create({
+      text: ta.value,
+      lang,
+      name: `${langName(lang)} cell ${index + 1}`,
+      dark: dark.matches,
+      onChange: (text) => {
+        ta.value = text;
+        ta.dispatchEvent(new Event('input'));
+      },
+      onHeight: size,
+    });
+    const s = {
+      handle,
+      get mounted() {
+        return mounted;
+      },
+      mount() {
+        if (mounted) return;
+        mounted = true;
+        box.hidden = false;
+        ta.hidden = true;
+        handle.mount(canvas);
+      },
+      unmount() {
+        if (!mounted) return;
+        mounted = false;
+        handle.unmount();
+        box.hidden = true;
+        ta.hidden = false;
+      },
+      holdsFocus: () => box.contains(document.activeElement),
+      destroy() {
+        if (io) io.unobserve(cell);
+        byCell.delete(cell);
+        handle.destroy();
+      },
+    };
+    el.handle = handle;
+    el.inEditor = (a) => !!a && box.contains(a);
+    el.focusEditor = () => {
+      s.mount();
+      handle.focus();
+    };
+    size(handle.height());
+    // the caret and the focus the textarea had go to the editor
+    const hadFocus = document.activeElement === ta;
+    // (a textarea nobody touched has its caret at the end, where a long line
+    // would start the view scrolled away from its first column)
+    if (hadFocus) handle.setSelection(ta.selectionStart, ta.selectionEnd);
+    // Jupyter's edit keys, before the editor sees them (a prevented key is
+    // not the editor's); Tab indents.
+    cell.addEventListener('keydown', (e) => box.contains(e.target) && editKey(e, index, (t) => handle.insert(t)), true);
+    // The mirror replays a click at the middle of a control it focuses: that
+    // is not a person, and must not move the caret.
+    box.addEventListener('focusin', () => handle.replay(true), true);
+    box.addEventListener('focusin', () => handle.replay(false));
+    box.addEventListener('focusout', (e) => {
+      if (!box.contains(e.relatedTarget)) handle.blur();
+    });
+    // a textarea that is on show (its cell is off screen) takes the keyboard
+    // to the editor
+    ta.addEventListener('focus', () => {
+      if (mounted) return;
+      const [a, b] = [ta.selectionStart, ta.selectionEnd];
+      s.mount();
+      handle.setSelection(a, b);
+      handle.focus();
+    });
+    surfaces.add(s);
+    byCell.set(cell, s);
+    if (io) io.observe(cell);
+    if (!io || hadFocus) s.mount();
+    if (hadFocus) handle.focus();
+    modeText();
   }
 
   // The "+ Add cell" control before cell at (or at the end): it opens the
@@ -510,7 +710,12 @@
       ta.rows = Math.max(1, ta.value.split('\n').length);
       cell.classList.add('stale');
     });
-    ta.addEventListener('keydown', (e) => editKey(e, i, ta));
+    ta.addEventListener('keydown', (e) =>
+      editKey(e, i, (text) => {
+        ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+        ta.dispatchEvent(new Event('input'));
+      })
+    );
     const meta = document.createElement('div');
     meta.className = 'meta';
     const out = document.createElement('div');
@@ -585,6 +790,7 @@
     const c = nb.cells[i];
     if (!c || !c.el) return;
     if (c.kind === 'prose') c.el.openProse();
+    else if (c.el.focusEditor) c.el.focusEditor();
     else c.el.editor.focus();
   }
 
@@ -596,15 +802,17 @@
     for (const c of nb.cells) {
       if (!c.el) continue;
       const a = document.activeElement;
-      c.el.mode.textContent =
-        a === c.el.editor ? 'editing · Esc for cell commands' : a === c.el.cell ? 'selected · Enter to edit, A/B to add, D D to delete' : '';
+      // an enhanced code cell is edited in its surface, not in its textarea
+      const editing = c.el.inEditor ? c.el.inEditor(a) : a === c.el.editor;
+      c.el.mode.textContent = editing ? 'editing · Esc for cell commands' : a === c.el.cell ? 'selected · Enter to edit, A/B to add, D D to delete' : '';
     }
   }
 
   // ---- Keys: Jupyter's, with the same meanings --------------------------
 
-  // In a cell's editor (edit mode).
-  function editKey(e, i, ta) {
+  // In a cell's editor (edit mode). insert puts text where the caret is: the
+  // textarea's way, or the editor's.
+  function editKey(e, i, insert) {
     if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
       run(codeIndex(i));
@@ -624,8 +832,7 @@
     } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       // Tab indents, as in an editor; Esc, then Tab, leaves the cell
       e.preventDefault();
-      ta.setRangeText('\t', ta.selectionStart, ta.selectionEnd, 'end');
-      ta.dispatchEvent(new Event('input'));
+      insert('\t');
     }
   }
 

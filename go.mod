@@ -12,6 +12,12 @@ require (
 	github.com/go-plot/plot v0.1.1
 	github.com/go-scikit/ruby v0.2.1
 	github.com/go-statistics/stats v0.1.0
+	github.com/go-widgets/painter v0.17.0
+	github.com/go-widgets/textinput v0.1.1
+	github.com/go-widgets/toolkit v0.374.3
+	github.com/go-widgets/toolkit/rougelex v0.2.0
+	github.com/go-widgets/webcanvas v0.14.3
+	github.com/go-widgets/window v0.93.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/traefik/yaegi v0.16.1
@@ -25,8 +31,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
 	github.com/abtreece/confd v0.41.2 // indirect
-	github.com/ajroetker/go-highway v0.0.12 // indirect
-	github.com/andybalholm/brotli v1.2.7 // indirect
+	github.com/andybalholm/brotli v1.2.8 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
@@ -73,10 +78,10 @@ require (
 	github.com/blevesearch/zapx/v17 v17.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/crewjam/saml v0.5.1 // indirect
+	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
@@ -90,8 +95,7 @@ require (
 	github.com/go-composites/null v0.0.0-20261010193318-b5bad10074b1 // indirect
 	github.com/go-composites/result v0.0.0-20261014005241-188da08131d5 // indirect
 	github.com/go-composites/time v0.0.0-20261016000833-3cfecd11ee53 // indirect
-	github.com/go-crdt/collab v0.74.0 // indirect
-	github.com/go-crdt/crdt v0.55.0 // indirect
+	github.com/go-crdt/crdt v0.57.0 // indirect
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-julia/julia v0.5.0 // indirect
@@ -100,14 +104,14 @@ require (
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
 	github.com/go-fft/fft v0.28.6 // indirect
-	github.com/go-gfx/gfx v0.35.0 // indirect
+	github.com/go-gfx/gfx v0.41.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
-	github.com/go-icons/iconoir v0.2.0 // indirect
+	github.com/go-icons/iconoir v0.3.0 // indirect
 	github.com/go-images/gif v0.2.0 // indirect
-	github.com/go-images/images v0.1.0 // indirect
+	github.com/go-images/images v0.1.1-0.20261026203936-4ac989d310a1 // indirect
 	github.com/go-images/jpeg v0.3.0 // indirect
-	github.com/go-images/jpeg2000 v0.13.3 // indirect
+	github.com/go-images/jpeg2000 v0.14.0 // indirect
 	github.com/go-images/png v0.2.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-kramdown/kramdown v0.3.1 // indirect
@@ -117,14 +121,14 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-mustache/mustache v0.1.0 // indirect
 	github.com/go-nokogiri/nokogiri v0.1.0 // indirect
-	github.com/go-opentype/fonts v0.12.0 // indirect
-	github.com/go-opentype/opentype v0.16.1 // indirect
+	github.com/go-opentype/fonts v0.14.0 // indirect
+	github.com/go-opentype/opentype v0.18.0 // indirect
 	github.com/go-opentype/shape v0.7.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
-	github.com/go-regexp/engine v0.3.2 // indirect
-	github.com/go-richdoc/richdoc v0.4.0 // indirect
-	github.com/go-rouge/rouge v0.7.1 // indirect
+	github.com/go-regexp/engine v0.4.2 // indirect
+	github.com/go-richdoc/richdoc v0.7.0 // indirect
+	github.com/go-rouge/rouge v0.9.0 // indirect
 	github.com/go-ruby-aasm/aasm v0.0.0-20261025185733-ae3deccc721d // indirect
 	github.com/go-ruby-abbrev/abbrev v0.0.0-20261025185738-0c54549fd16a // indirect
 	github.com/go-ruby-acme/acme v0.0.0-20261025190735-e5aebae8127c // indirect
@@ -257,7 +261,7 @@ require (
 	github.com/go-ruby-ransack/ransack v0.0.0-20261025191835-4bb0c90b22bd // indirect
 	github.com/go-ruby-rdoc/rdoc v0.0.0-20261025191845-0a041c5257b8 // indirect
 	github.com/go-ruby-redis/redis v0.0.0-20261025191855-6267a6f1b991 // indirect
-	github.com/go-ruby-regexp/regexp v0.1.1 // indirect
+	github.com/go-ruby-regexp/regexp v0.2.1 // indirect
 	github.com/go-ruby-reline/reline v0.1.0 // indirect
 	github.com/go-ruby-resolv/resolv v0.0.0-20261027105700-a36dcee9cbce // indirect
 	github.com/go-ruby-resque/resque v0.0.0-20261025191914-a0f00500072e // indirect
@@ -308,16 +312,16 @@ require (
 	github.com/go-simd/base64 v0.1.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
+	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
-	github.com/go-typeset/bidi v0.3.0 // indirect
+	github.com/go-typeset/bidi v0.3.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/webauthn v0.18.2 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
-	github.com/go-widgets/mvvm v0.9.0 // indirect
-	github.com/go-widgets/painter v0.15.0 // indirect
-	github.com/go-widgets/toolkit v0.321.2 // indirect
+	github.com/go-widgets/mvvm v0.15.0 // indirect
 	github.com/go-widgets/tui v0.61.0 // indirect
+	github.com/go-widgets/vcs v0.1.0 // indirect
 	github.com/go-xslt/xslt v0.1.0 // indirect
 	github.com/go-zookeeper/zk v1.0.4 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
@@ -373,8 +377,6 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
-	github.com/sergeymakinen/go-ico v1.0.0 // indirect
 	github.com/tannevaled/gobig2 v0.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twmb/franz-go v1.22.2 // indirect

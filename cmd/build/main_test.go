@@ -84,7 +84,7 @@ func TestBuild(t *testing.T) {
 	if err := runTo(log, args...); err != nil {
 		t.Fatalf("%v\n%s", err, log)
 	}
-	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "notebooks/1-fit-and-test.md", "cards/1.svg", "cards/5.svg"} {
+	for _, f := range []string{"index.html", "playground.css", "playground.js", "worker.js", "wasm_exec.js", "playground.wasm", "editor.wasm", "notebooks/1-fit-and-test.md", "cards/1.svg", "cards/5.svg"} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Error(err)
 		}
@@ -108,6 +108,9 @@ func TestBuild(t *testing.T) {
 		` hidden data-signal="1" data-delay="300"`,
 		// each core's URL carries a hash of its bytes
 		`<script id="cores-data" type="application/json">{"go":"playground.wasm?v=`,
+		// and the editor's, which the page loads once it is usable as it is
+		`<script id="editor-data" type="application/json">{"size":`,
+		`"url":"editor.wasm?v=`,
 	} {
 		if !bytes.Contains(page, []byte(want)) {
 			t.Errorf("index.html lacks %s", want)
@@ -118,7 +121,7 @@ func TestBuild(t *testing.T) {
 	}
 	// the carousel's script, the notebooks' data, the cores' URLs, the
 	// languages and playground.js
-	if bytes.Count(page, []byte("</script>")) != 5 {
+	if bytes.Count(page, []byte("</script>")) != 6 {
 		t.Error("a notebook closed a <script> early")
 	}
 	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
@@ -323,6 +326,18 @@ func TestWriteErrors(t *testing.T) {
 			}
 			return fakeGo(root)(env, args...)
 		}, err: "playground-ruby.wasm"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, editorPkg) {
+				return nil, errors.New("no editor")
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "building the code editor: no editor"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, editorPkg) {
+				return nil, nil // built nothing
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "editor.wasm"},
 	} {
 		out := t.TempDir()
 		if tc.block != "" {

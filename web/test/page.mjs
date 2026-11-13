@@ -33,7 +33,11 @@ if (!/^https?:/.test(target)) {
     const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     const p = path.join(target, name);
     const file = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, 'index.html') : p;
-    if (!fs.existsSync(file)) {
+    // This check drives the page as a <textarea> page: the code editor that
+    // replaces the textareas (editor.wasm) is not served here, which is also
+    // the page a visitor gets when it fails to load. The editor has its own
+    // browser test, browsertest/ (chromedp), which drives the real page with it.
+    if (!fs.existsSync(file) || path.basename(name) === 'editor.wasm') {
       res.writeHead(404).end();
       return;
     }

@@ -43,6 +43,8 @@ jobs:
           # The core with Ruby cells, which the page loads for a notebook that has one.
           GOOS=js GOARCH=wasm go vet -tags ruby,rbgo_core ./cmd/playground ./engine
           GOOS=js GOARCH=wasm go build -tags ruby,rbgo_core -o /dev/null ./cmd/playground
+          # The code editor, which the page loads on its main thread.
+          GOOS=js GOARCH=wasm go vet ./cmd/editor && GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/editor
       - name: Test + 100% coverage gate
         shell: bash
         run: |
@@ -90,6 +92,17 @@ jobs:
       - run: node web/test/page.mjs site/statistics
       - run: node web/test/page.mjs site/numerics
       - run: node web/test/page.mjs site/notebook
+      # The code editor on the real page: the runner image has Google Chrome. A
+      # test that skipped for want of it (or of PLAYGROUND_SITE) would pass here
+      # and prove nothing, so the job requires each PASS line.
+      - name: The code editor, driven by chromedp
+        working-directory: browsertest
+        run: |
+          set -o pipefail
+          PLAYGROUND_SITE="$GITHUB_WORKSPACE/site/notebook" CHROME="$(command -v google-chrome)" go test -count=1 -v ./... | tee browser.log
+          for t in TestACodeCellIsOneTextbox TestTypingAndIME TestFindReachesTheCode TestASelectionFromProseIntoCodeCopies TestTheWheelOverACellScrollsThePage TestACellHasTheSameCSSMetricsAtDPR1AndDPR2 TestOffScreenCellsAreAsTallAsMountedOnesAtDPR2 TestTheWheelScrollsALongLineSidewaysAndTheEditorKeepsNoVerticalWheel TestAFailedEditorLoadLeavesTheTextareaPage; do
+            grep -q -- "--- PASS: $t " browser.log || { echo "::error::$t did not pass (or was skipped)"; exit 1; }
+          done
 
   security:
     name: govulncheck + fuzz
