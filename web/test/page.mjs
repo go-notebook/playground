@@ -280,8 +280,9 @@ async function carouselChecks() {
 // The check-only languages, as their examples show them: the fence word, the
 // badge's name, the start of the not-run message and the site the prose links.
 const CHECKED = {
-  Julia: { lang: 'julia', text: 'Julia cells are parsed and checked, but not run yet', site: 'https://go-embedded-julia.github.io/' },
-  R: { lang: 'r', text: 'R cells are parsed and checked, but not run yet', site: 'https://go-embedded-r.github.io/' },
+  Julia: { lang: 'julia', text: 'Julia cells are parsed and checked, but not run yet', site: 'https://go-embedded-julia.github.io/', error: /line 2:8: syntax error/ },
+  R: { lang: 'r', text: 'R cells are parsed and checked, but not run yet', site: 'https://go-embedded-r.github.io/', error: /line 2:8: syntax error/ },
+  C: { lang: 'c', text: 'C cells are not run yet', site: 'https://github.com/go-embedded-c/c', error: /line 2:11: unexpected identifier/ },
 };
 
 // checkedExampleChecks reads the open notebook, an example with cells of the
@@ -291,7 +292,7 @@ const CHECKED = {
 // prose says plainly that the language is checked, not run, and links its
 // project.
 async function checkedExampleChecks(page, name, label) {
-  const { lang, text, site } = CHECKED[label];
+  const { lang, text, site, error } = CHECKED[label];
   const r = await page.evaluate(() => {
     const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
     return {
@@ -316,7 +317,7 @@ async function checkedExampleChecks(page, name, label) {
   if (!alone.length) fail(`${name}: no Go cell runs independently of the ${label} cell: ` + JSON.stringify(r.cells));
   if (!/checked, not run/.test(r.prose) || !r.links.includes(site))
     fail(`${name}: the prose should say ${label} cells are checked, not run, and link ${site}`);
-  if (!/line 2:8: syntax error/.test(r.prose)) fail(`${name}: the prose should show a syntax error caught at its line`);
+  if (!error.test(r.prose)) fail(`${name}: the prose should show a syntax error caught at its line`);
 }
 
 // ---- Editing --------------------------------------------------------------
@@ -377,7 +378,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),Ruby,Julia · not runnable yet,R · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),Ruby,C · not runnable yet,Julia · not runnable yet,R · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;

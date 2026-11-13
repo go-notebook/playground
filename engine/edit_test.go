@@ -150,8 +150,12 @@ func TestEditRefuses(t *testing.T) {
 // Every registered language is one a cell can be switched to and inserted in:
 // the page's menus list the same registry (FuzzEdit found ```r refused).
 func TestLangsAreTheRegistry(t *testing.T) {
-	if !slices.Equal(Langs, analysis.Languages()) || !slices.Contains(Langs, "r") {
+	if !slices.Equal(Langs, analysis.Languages()) || !slices.Contains(Langs, "r") || !slices.Contains(Langs, "c") {
 		t.Fatalf("Langs = %v", Langs)
+	}
+	c := mustEdit(t, "```go\nx := 1\n```\n", Op{Op: "lang", Index: 0, Lang: "c"}, Op{Op: "insert", Index: 1, Lang: "c"})
+	if c.Markdown != "```c\nx := 1\n```\n```c\n```\n" {
+		t.Errorf("%q", c.Markdown)
 	}
 	e := mustEdit(t, "```go\nx := 1\n```\n", Op{Op: "lang", Index: 0, Lang: "r"}, Op{Op: "insert", Index: 1, Lang: "r"})
 	if e.Markdown != "```r\nx := 1\n```\n```r\n```\n" {
@@ -163,7 +167,7 @@ func TestLangsAreTheRegistry(t *testing.T) {
 // its reverse give the document back; setting every cell's text to itself
 // changes nothing.
 func FuzzEdit(f *testing.F) {
-	for _, s := range []string{odd, "", "```go\n", "~~~ruby x\n1\n~~~", "a\n```go\n```\n```\n", "   ```go\n1\n   ```\n", "```r\nx <- 1\n```\n"} {
+	for _, s := range []string{odd, "", "```go\n", "~~~ruby x\n1\n~~~", "a\n```go\n```\n```\n", "   ```go\n1\n   ```\n", "```r\nx <- 1\n```\n", "```c\nint x = 1;\n```\n"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, md string) {
