@@ -100,7 +100,7 @@ jobs:
         run: |
           set -o pipefail
           PLAYGROUND_SITE="$GITHUB_WORKSPACE/site/notebook" CHROME="$(command -v google-chrome)" go test -count=1 -v ./... | tee browser.log
-          for t in TestACodeCellIsOneTextbox TestTypingAndIME TestFindReachesTheCode TestASelectionFromProseIntoCodeCopies TestTheWheelOverACellScrollsThePage TestACellHasTheSameCSSMetricsAtDPR1AndDPR2 TestOffScreenCellsAreAsTallAsMountedOnesAtDPR2TestTheWheelScrollsALongLineSidewaysAndTheEditorKeepsNoVerticalWheel TestAFailedEditorLoadLeavesTheTextareaPage; do
+          for t in TestACodeCellIsOneTextbox TestTypingAndIME TestFindReachesTheCode TestASelectionFromProseIntoCodeCopies TestTheWheelOverACellScrollsThePage TestACellHasTheSameCSSMetricsAtDPR1AndDPR2 TestOffScreenCellsAreAsTallAsMountedOnesAtDPR2 TestTheWheelScrollsALongLineSidewaysAndTheEditorKeepsNoVerticalWheel TestAFailedEditorLoadLeavesTheTextareaPage; do
             grep -q -- "--- PASS: $t " browser.log || { echo "::error::$t did not pass (or was skipped)"; exit 1; }
           done
 
