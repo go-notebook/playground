@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.28.0
-	github.com/go-notebook/notebook v0.9.0
+	github.com/go-notebook/notebook v0.14.0
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
@@ -98,8 +98,9 @@ require (
 	github.com/go-crdt/crdt v0.57.0 // indirect
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.2.0 // indirect
+	github.com/go-embedded-c/c v0.2.1 // indirect
 	github.com/go-embedded-julia/julia v0.5.0 // indirect
-	github.com/go-embedded-r/r v0.1.0 // indirect
+	github.com/go-embedded-r/r v0.13.1 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
@@ -421,5 +422,9 @@ require (
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
+	modernc.org/opt v0.2.0 // indirect
+	modernc.org/sortutil v1.2.1 // indirect
 	modernc.org/sqlite v1.61.0 // indirect
+	modernc.org/strutil v1.2.1 // indirect
+	modernc.org/token v1.1.0 // indirect
 )

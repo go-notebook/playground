@@ -19,7 +19,7 @@ func TestRCells(t *testing.T) {
 		"```ruby\nk = j * 2\n```\n" +
 		"```go\nn * 2\n```\n"
 	res := Run(nb)
-	want := []string{"", analysis.RNotRun, analysis.RBlocked(1), analysis.JuliaNotRun, analysis.JuliaBlocked(3), ""}
+	want := []string{"", analysis.RunOf("r").NotRun, analysis.RunOf("r").Blocked(1), analysis.JuliaNotRun, analysis.JuliaBlocked(3), ""}
 	status := []string{"", StatusNotRun, StatusBlocked, StatusNotRun, StatusBlocked, ""}
 	for i, w := range want {
 		if res[i].Error != w || res[i].Skipped || res[i].Status != status[i] {

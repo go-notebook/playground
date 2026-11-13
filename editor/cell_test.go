@@ -374,6 +374,31 @@ func TestDrawPaintsTheTextInTheThemesInk(t *testing.T) {
 	}
 }
 
+// A C cell is highlighted: the same text drawn with the fence word "c" is not
+// the frame drawn with a language that has no lexer, and a change of language
+// to "c" repaints.
+func TestACCellIsHighlighted(t *testing.T) {
+	src := "#include <stdio.h>\nstatic int total = 3; /* size */\nstruct s { char *name; };\n"
+	draw := func(lang string) []byte {
+		c := New(Config{Text: src, Lang: lang, Name: "C cell 1"})
+		c.Resize(400, 200)
+		return frame(c)
+	}
+	if string(draw("c")) == string(draw("none")) {
+		t.Fatal("the C lexer paints nothing: C cells are not highlighted")
+	}
+	if string(draw("c")) == string(draw("go")) {
+		t.Fatal("C is drawn as Go")
+	}
+	c := New(Config{Text: src, Lang: "none", Name: "C cell 1"})
+	c.Resize(400, 200)
+	before := string(frame(c))
+	c.SetLanguage("c")
+	if string(frame(c)) == before {
+		t.Fatal("changing the language to c did not repaint with the C lexer")
+	}
+}
+
 func TestLanguageNameAndFocusAreTheCells(t *testing.T) {
 	c, _ := newCell(t, "x")
 	c.SetLanguage("ruby")

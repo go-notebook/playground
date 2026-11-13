@@ -197,6 +197,12 @@ func TestJuliaNotebooks(t *testing.T) {
 		// A Go cell blocked on a Julia cell with a syntax error: the Julia
 		// cell fails, so the build does.
 		{name: "blockedsyntax", src: "```julia\nx = (1,\n```\n```go\ny := x\n```\n", err: "does not run", log: "syntax error"},
+		// The same for C: the shipped example, a C cell after the one it reads,
+		// a syntax error, and a cell that is an error alone.
+		{name: "cexample", src: mustRead(t, "../../examples/notebook/6-c.md")},
+		{name: "cok", src: "```c\ntypedef int myint;\n```\n```c\nmyint total = 2;\n```\n```go\nm := total\n```\n```go\n1 + 1\n```\n"},
+		{name: "csyntax", src: "```c\nint y = 2;\nint x = y y;\n```\n", err: "csyntax.md does not run", log: "csyntax.md:2: cell 0 failed:\nline 2:11: unexpected identifier, expected ';'"},
+		{name: "calone", src: "```c\nmyint v = 1;\n```\n", err: "calone.md does not run", log: "line 1:7: unexpected identifier"},
 	} {
 		log.Reset()
 		p := write(tc.name+".md", tc.src)
@@ -238,6 +244,9 @@ func TestFailed(t *testing.T) {
 		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "ruby", false},
 		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "julia", true},
 		{engine.Result{Error: "x", Status: "other"}, "go", true},
+		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "c", false},
+		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "c", true},
+		{engine.Result{Error: "boom"}, "c", true},
 	} {
 		if got := cellFailed(tc.r, tc.lang); got != tc.want {
 			t.Errorf("cellFailed(%+v, %q) = %v, want %v", tc.r, tc.lang, got, tc.want)
@@ -251,6 +260,7 @@ func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
 	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
+		`{"name":"c","label":"C","runs":false,"core":"ruby"},` +
 		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"},` +
 		`{"name":"r","label":"R","runs":false,"core":"ruby"}]`
 	if string(got) != want {

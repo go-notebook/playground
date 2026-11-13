@@ -23,11 +23,17 @@ func (s *session) rubyCell(string) (string, []map[string]string, string) {
 // cell.
 const JuliaSupported = false
 
-// checkedCell is what the default core says of a cell of a check-only
-// language (Julia, R); the page never sends it one.
-func checkedCell(lang, _ string) (string, bool) {
+// checker is absent from the default core: it makes no analysis.
+type checker struct{ cells []format.Cell }
+
+func newChecker(cells []format.Cell) *checker { return &checker{cells} }
+
+// cell is what the default core says of a cell of a check-only language
+// (Julia, R, C); the page never sends it one.
+func (k *checker) cell(i int) (string, bool) {
+	lang := k.cells[i].Lang
 	return "this build checks no " + lang + " cells (in the page, the core with the parsers is loaded for a notebook with " + lang + " cells)", false
 }
 
-// checkedBlocked finds nothing to block without the analysis.
-func checkedBlocked([]format.Cell) map[int]int { return nil }
+// blocked finds nothing to block without the analysis.
+func (k *checker) blocked() map[int]int { return nil }

@@ -123,7 +123,8 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 	}
 	s := newSession()
 	out := make([]Result, len(cells))
-	blocked := checkedBlocked(cells)
+	chk := newChecker(cells)
+	blocked := chk.blocked()
 	failed := false
 	for i, c := range cells {
 		out[i] = Result{Cell: i, Line: c.Line}
@@ -131,11 +132,11 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			out[i].Skipped = true
 			continue
 		}
-		// A cell of a check-only language (Julia, R) is checked, never run,
-		// and so are the cells that read it: each says why, and the others
-		// run.
+		// A cell of a check-only language (Julia, R, C) is checked, never
+		// run, and so are the cells that read it: each says why, and the
+		// others run.
 		if !analysis.RunOf(c.Lang).Runs {
-			msg, checked := checkedCell(c.Lang, c.Source)
+			msg, checked := chk.cell(i)
 			out[i].Error = msg
 			if checked {
 				out[i].Status = StatusNotRun
