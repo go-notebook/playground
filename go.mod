@@ -14,9 +14,9 @@ require (
 	github.com/go-statistics/stats v0.1.0
 	github.com/go-widgets/painter v0.17.0
 	github.com/go-widgets/textinput v0.1.1
-	github.com/go-widgets/toolkit v0.370.0
+	github.com/go-widgets/toolkit v0.374.3
 	github.com/go-widgets/toolkit/rougelex v0.2.0
-	github.com/go-widgets/webcanvas v0.14.2
+	github.com/go-widgets/webcanvas v0.14.3
 	github.com/go-widgets/window v0.93.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

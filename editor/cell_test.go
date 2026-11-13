@@ -53,6 +53,13 @@ func TestNewHoldsTheTextAndNamesTheTextbox(t *testing.T) {
 	}
 }
 
+func TestACellOpensWithItsCaretAtTheStart(t *testing.T) {
+	c, _ := newCell(t, "first\nsecond")
+	if a, f := c.Selection(); a != 0 || f != 0 {
+		t.Fatalf("caret %d,%d, want 0,0", a, f)
+	}
+}
+
 func TestBoundCutsOnARuneBoundary(t *testing.T) {
 	if Bound("short") != "short" {
 		t.Fatal("a short text changed")

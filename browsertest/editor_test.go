@@ -188,3 +188,87 @@ func TestAFailedEditorLoadLeavesTheTextareaPage(t *testing.T) {
 	until(t, ctx, "the second cell's result", time.Minute,
 		`document.querySelectorAll('#notebook .cell[data-lang]')[1].querySelector('.outputs').textContent.includes('66')`)
 }
+
+// A cell is the same size in CSS pixels on a plain display and on a dense one:
+// the same glyphs, the same row spacing, the same height. (The toolkit's metric
+// scale is global, and the surface is drawn at devicePixelRatio: they must
+// move together.)
+func TestACellHasTheSameCSSMetricsAtDPR1AndDPR2(t *testing.T) {
+	type metrics struct{ Font, Pitch, Height, Left float64 }
+	measure := func(dpr float64) metrics {
+		ctx := open(t, serve(t), 800, 600, dpr)
+		editorUp(t, ctx)
+		openNotebook(t, ctx, testNotebook, testCells)
+		until(t, ctx, "both code cells on their canvases", time.Minute,
+			`[...playgroundEditor.surfaces].filter((s) => s.mounted).length === 2`)
+		time.Sleep(800 * time.Millisecond) // the layer follows the first frames
+		r := ev[[]float64](t, ctx, `(() => {
+  const cell = document.querySelectorAll('#notebook .cell[data-lang]')[0];
+  const l = cell.querySelector('[data-webcanvas-layer]');
+  const a = l.children[0].getBoundingClientRect(), b = l.children[1].getBoundingClientRect();
+  return [parseFloat(getComputedStyle(l.children[0]).fontSize), b.top - a.top,
+          cell.querySelector('canvas').getBoundingClientRect().height, a.left - cell.querySelector('canvas').getBoundingClientRect().left];
+})()`)
+		return metrics{r[0], r[1], r[2], r[3]}
+	}
+	m1, m2 := measure(1), measure(2)
+	t.Logf("dpr 1: %+v", m1)
+	t.Logf("dpr 2: %+v", m2)
+	near := func(what string, a, b float64) {
+		if d := a - b; d > 1 || d < -1 {
+			t.Errorf("%s is %.2f CSS px at dpr 1 and %.2f at dpr 2", what, a, b)
+		}
+	}
+	near("the glyph size", m1.Font, m2.Font)
+	near("the row pitch", m1.Pitch, m2.Pitch)
+	near("the cell height", m1.Height, m2.Height)
+	near("the text's left edge", m1.Left, m2.Left)
+}
+
+// Sideways: a horizontal wheel over a cell with a long line moves the text
+// (the editor uses it), and a vertical one moves the page (it does not).
+func TestTheWheelScrollsALongLineSidewaysAndTheEditorKeepsNoVerticalWheel(t *testing.T) {
+	ctx := open(t, serve(t), 700, 360, 1)
+	editorUp(t, ctx)
+	// not periodic: a scroll by a whole number of periods would look like none
+	var digits strings.Builder
+	for i := 0; i < 150; i++ {
+		digits.WriteString(itoa(i * 7))
+	}
+	long := "x := \"" + digits.String() + "\""
+	var md strings.Builder
+	md.WriteString("# Sideways\n\n```go\n" + long + "\n```\n\n")
+	for i := 0; i < 10; i++ {
+		md.WriteString("Prose.\n\n```go\nx := 1\n```\n\n")
+	}
+	openNotebook(t, ctx, md.String(), -11)
+	until(t, ctx, "the cell on its canvas", time.Minute, `[...playgroundEditor.surfaces].some((s) => s.mounted)`)
+	time.Sleep(800 * time.Millisecond)
+	x, y := centre(t, ctx, 0)
+	frame := func() string {
+		return ev[string](t, ctx, `(() => { const c = document.querySelector('#notebook .cell[data-lang] canvas');
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let h = 0;
+  for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0; return '' + h; })()`)
+	}
+	before, y0 := frame(), ev[float64](t, ctx, `window.scrollY`)
+	// sideways: dx leads
+	if _, err := chromedp.Call(ctx, input.DispatchMouseEvent, input.DispatchMouseEventParams{Type: input.DispatchMouseEventTypeMouseWheel, X: x, Y: y, DeltaX: 400, DeltaY: 1}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if frame() == before {
+		t.Error("a horizontal wheel did not move the text of a long line")
+	}
+	if got := ev[float64](t, ctx, `window.scrollY`); got != y0 {
+		t.Errorf("a horizontal wheel moved the page (%v -> %v)", y0, got)
+	}
+	// vertical: the page moves, the text does not
+	moved := frame()
+	if _, err := chromedp.Call(ctx, input.DispatchMouseEvent, input.DispatchMouseEventParams{Type: input.DispatchMouseEventTypeMouseWheel, X: x, Y: y, DeltaX: 1, DeltaY: 200}); err != nil {
+		t.Fatal(err)
+	}
+	until(t, ctx, "the page to scroll", 5*time.Second, `window.scrollY > `+ftoa(y0))
+	if frame() != moved {
+		t.Error("a vertical wheel moved the text of the cell")
+	}
+}

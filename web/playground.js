@@ -416,24 +416,25 @@
       : null;
   window.playgroundEditor = { surfaces, io: !!io }; // for web/test
 
-  // A cell's height or the article's width changed: the surfaces that are
-  // mounted lay themselves out again (webcanvas does it on a window resize).
-  // After the event that caused it, never in the middle of it.
-  let relayoutQueued = false;
-  function relayout() {
-    if (relayoutQueued) return;
-    relayoutQueued = true;
+  // A cell's height changed: that surface lays itself out again at its canvas's
+  // new CSS box (Surface.Resize), and no other does. It runs after the event
+  // that caused it, never in the middle of it.
+  const resizeQueued = new Set();
+  function relayout(handle) {
+    if (resizeQueued.has(handle)) return;
+    resizeQueued.add(handle);
     queueMicrotask(() => {
-      relayoutQueued = false;
-      window.dispatchEvent(new Event('resize'));
+      resizeQueued.delete(handle);
+      handle.resize();
     });
   }
+  // The article's width changed (the window, a sidebar): every mounted surface
+  // follows it.
   let articleWidth = 0;
   new ResizeObserver(() => {
-    if (article.clientWidth !== articleWidth) {
-      articleWidth = article.clientWidth;
-      relayout();
-    }
+    if (article.clientWidth === articleWidth) return;
+    articleWidth = article.clientWidth;
+    for (const s of surfaces) if (s.mounted) s.handle.resize();
   }).observe(article);
   dark.addEventListener('change', () => {
     for (const s of surfaces) s.handle.setDark(dark.matches);
@@ -493,12 +494,13 @@
     box.append(canvas);
     ta.before(box);
     let mounted = false;
+    let handle = null;
     const size = (css) => {
       canvas.style.height = css + 'px';
       ta.style.height = css + 'px';
-      relayout();
+      if (handle) relayout(handle);
     };
-    const handle = window.gonbEditor.create({
+    handle = window.gonbEditor.create({
       text: ta.value,
       lang,
       name: `${langName(lang)} cell ${index + 1}`,
@@ -544,7 +546,9 @@
     size(handle.height());
     // the caret and the focus the textarea had go to the editor
     const hadFocus = document.activeElement === ta;
-    handle.setSelection(ta.selectionStart, ta.selectionEnd);
+    // (a textarea nobody touched has its caret at the end, where a long line
+    // would start the view scrolled away from its first column)
+    if (hadFocus) handle.setSelection(ta.selectionStart, ta.selectionEnd);
     // Jupyter's edit keys, before the editor sees them (a prevented key is
     // not the editor's); Tab indents.
     cell.addEventListener('keydown', (e) => box.contains(e.target) && editKey(e, index, (t) => handle.insert(t)), true);

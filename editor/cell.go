@@ -95,6 +95,10 @@ func New(cfg Config) *Cell {
 	c.ed.Syntax = rougelex.New()
 	c.ed.Language = cfg.Lang
 	c.ed.AccessibleName = cfg.Name
+	// A new editor holds its caret at the end of its text; a cell opens with it
+	// at the start, as a text area does, so that a long first line shows its
+	// first column.
+	c.ed.SetInputSelection(0, 0)
 	c.SetDark(cfg.Dark)
 	c.last = c.ed.InputText()
 	c.height = c.ed.PreferredHeight().Get()

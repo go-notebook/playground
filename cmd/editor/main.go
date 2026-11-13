@@ -7,6 +7,7 @@
 //
 //	const h = gonbEditor.create({text, lang, name, dark, onChange(text), onHeight(cssPx)})
 //	h.mount(canvas)      // draw on this <canvas>; keyboard, IME, find and the AX tree follow
+//	h.resize()           // lay it out again at its canvas's CSS box (this surface only)
 //	h.unmount()          // free its frame; the text, caret and undo stay in h
 //	h.focus()
 //	h.text()  h.setText(s)  h.insert(s)  h.setLang(l)  h.setName(n)  h.setDark(b)
@@ -79,6 +80,12 @@ func create(_ js.Value, args []js.Value) any {
 		unmount()
 		canvas = a[0]
 		surf = webcanvas.Mount(canvas, cell)
+		return nil
+	})
+	def("resize", func([]js.Value) any {
+		if surf != nil {
+			surf.Resize()
+		}
 		return nil
 	})
 	def("unmount", func([]js.Value) any { unmount(); return nil })
