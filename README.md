@@ -63,7 +63,17 @@ An opened or edited notebook is untrusted. In the playground:
 
 ### Each cell says its language
 
-Above each cell, a badge says which language runs it, **Go** or **Ruby**, or that a **Julia** or **R** cell is not runnable yet. The badge is text, not a colour, and it is the cell's description for a screen reader. The language comes from the fence's info string (` ```go `, ` ```ruby `), as go-notebook's `format` package reads it, never from the code. While the runtime that runs the cell is not ready, the badge says so: *Go · loading the runtime…*, *Ruby · loading the Ruby runtime…*. It says *cannot run: the runtime did not start* if the runtime failed. A fenced block in any other language (` ```python `) is not a cell. It stays prose, shown as text under a badge that says *python · not run: shown as text*. The editor is a plain `<textarea>` with no syntax highlighting, so the badge is how a cell shows its language. `web/test/page.mjs` checks every example's badges, their wording before the runtime is ready, other fences, and their fit at 360 px.
+Above each cell, a badge says which language runs it, **Go** or **Ruby**, or that a **Julia** or **R** cell is not runnable yet. The badge is text, not a colour, and it is the cell's description for a screen reader. The language comes from the fence's info string (` ```go `, ` ```ruby `), as go-notebook's `format` package reads it, never from the code. While the runtime that runs the cell is not ready, the badge says so: *Go · loading the runtime…*, *Ruby · loading the Ruby runtime…*. It says *cannot run: the runtime did not start* if the runtime failed. A fenced block in any other language (` ```python `) is not a cell. It stays prose, shown as text under a badge that says *python · not run: shown as text*. Since v0.11.0 the editor highlights code (see [The code editor](#the-code-editor)), and the badge stays the cell's text description. `web/test/page.mjs` checks every example's badges, their wording before the runtime is ready, other fences, and their fit at 360 px.
+
+### The code editor
+
+Since v0.11.0 a code cell is the toolkit's `CodeEditor` drawn on a webcanvas surface, with [go-rouge](https://github.com/go-rouge/rouge) highlighting. Prose cells keep their `<textarea>`.
+
+- **Accessibility.** Each cell is one textbox for a screen reader, named *Go cell N* (or the cell's language).
+- **Browser behaviour.** IME input works, the browser's Ctrl+F finds code, a selection from prose into code copies, and the wheel scrolls the page (long lines scroll sideways).
+- **Sizing and memory.** A cell is as tall as its content, and a cell that is off screen frees its drawing memory.
+- **Fallback.** The page renders first with the plain `<textarea>` editor, and keeps it if the editor fails to load.
+- **Size.** The editor adds 1.8 MB brotli (9.8 MB raw).
 
 ### While it loads
 
