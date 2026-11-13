@@ -42,6 +42,11 @@ import (
 // corePkg is the package of the WebAssembly core.
 const corePkg = "github.com/go-notebook/playground/cmd/playground"
 
+// editorPkg is the package of the code editor, a WebAssembly module of the
+// page's main thread that replaces the code cells' <textarea> once it has
+// loaded (see web/playground.js).
+const editorPkg = "github.com/go-notebook/playground/cmd/editor"
+
 // config is what the flags say, and where the command writes.
 type config struct {
 	out, org, home, accent, accentDark, libraries string
@@ -250,6 +255,13 @@ func build(c config) error {
 		"build", "-trimpath", "-tags=ruby,rbgo_core", "-ldflags=-s -w", "-o", rubyWasm, corePkg); err != nil {
 		return fmt.Errorf("building the Ruby WebAssembly core: %w", err)
 	}
+	// The code editor, which the page loads after it is usable as it is: a
+	// failed load leaves the <textarea> page.
+	editorWasm := filepath.Join(c.out, "editor.wasm")
+	if _, err := goCmd([]string{"GOOS=js", "GOARCH=wasm", "GOWORK=off"},
+		"build", "-trimpath", "-ldflags=-s -w", "-o", editorWasm, editorPkg); err != nil {
+		return fmt.Errorf("building the code editor: %w", err)
+	}
 	root, err := goCmd(nil, "env", "GOROOT")
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
@@ -274,6 +286,11 @@ func build(c config) error {
 		cores[core.key], sizes[core.key] = u, size
 	}
 	coresJSON, _ := json.Marshal(cores) // strings always encode
+	editorURL, editorSize, err := coreURL(editorWasm)
+	if err != nil {
+		return err
+	}
+	editorJSON, _ := json.Marshal(map[string]any{"url": editorURL, "size": editorSize})
 
 	// The page.
 	for _, name := range []string{"playground.css", "playground.js", "worker.js"} {
@@ -303,6 +320,7 @@ func build(c config) error {
 		"Version":     html.EscapeString(version()),
 		"Examples":    string(data),
 		"Cores":       string(coresJSON),
+		"Editor":      string(editorJSON),
 		"Languages":   string(langsJSON),
 		"Carousel":    string(car), // html/template's output
 	})
@@ -310,8 +328,8 @@ func build(c config) error {
 		return err
 	}
 
-	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB\n",
-		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6)
+	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB, editor.wasm %.1f MB\n",
+		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6, float64(editorSize)/1e6)
 	return nil
 }
 

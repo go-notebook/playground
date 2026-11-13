@@ -134,7 +134,13 @@ button:disabled { opacity: .55; cursor: default; }
   white-space: pre; overflow-x: auto;
 }
 .cell textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cell .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0 4px; min-height: 1em; }
+/* The code editor's surface (web/playground.js, enhance): a canvas as wide as
+   the cell and as tall as its text, with the accessibility mirror webcanvas
+   puts beside it. */
+.code-surface { position: relative; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; overflow: hidden; background: var(--code-bg); }
+.code-surface[hidden] { display: none; }
+.code-surface:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.code-canvas { display: block; width: 100%; height: 3em; outline: none; }.cell .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0 4px; min-height: 1em; }
 .output {
   margin: 6px 0 0; padding: 8px 12px; background: var(--surface); border-radius: 6px;
   white-space: pre-wrap; overflow-x: auto; overflow-wrap: anywhere;
