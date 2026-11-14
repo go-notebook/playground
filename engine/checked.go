@@ -12,9 +12,8 @@ import (
 )
 
 // A cell of a language go-notebook registers as check-only (analysis.RunOf
-// says it does not run: Julia, until go-embedded-julia has a runtime; R,
-// until go-embedded-r has an evaluator; C, until go-embedded-c generates
-// code) is parsed and checked as go-notebook does, but not run. The parsers
+// says it does not run: Julia, until go-embedded-julia has a runtime; C,
+// until go-embedded-c generates code; R runs, in r.go) is parsed and checked as go-notebook does, but not run. The parsers
 // are in the core that runs Ruby cells, which the page loads for any language
 // but Go (noruby.go): this file imports analysis/parsers, and the default
 // core, built without it, links no parser (#23). Both cores know every

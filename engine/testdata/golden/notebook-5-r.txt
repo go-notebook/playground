@@ -1,10 +1,15 @@
 == cell 0 (line 8)
-== cell 1 (line 14)
--- notrun
-R cells are parsed and checked, but not run yet in the browser: go-notebook runs them in a worker process, which a page cannot start
-== cell 2 (line 22)
--- blocked
-blocked: it depends on cell 1, an R cell, and R cells are not run yet
-== cell 3 (line 28)
+== cell 1 (line 15)
+-- output
+[1] 385
+mean of the squares: 38.5 
+   min    max spread 
+     1    100     99 
+== cell 2 (line 25)
+-- output
+[1] Inf
+Warning message:
+In ratio(1, 0) : division by zero
+== cell 3 (line 35)
 -- show
-20
+42

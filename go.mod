@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.28.0
-	github.com/go-notebook/notebook v0.14.0
+	github.com/go-notebook/notebook v0.14.1-0.20261114120849-35aba500ae5d
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
@@ -101,6 +101,7 @@ require (
 	github.com/go-embedded-c/c v0.2.1 // indirect
 	github.com/go-embedded-julia/julia v0.5.0 // indirect
 	github.com/go-embedded-r/r v0.13.1 // indirect
+	github.com/go-embedded-r/tre v0.1.3 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect

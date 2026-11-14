@@ -281,7 +281,6 @@ async function carouselChecks() {
 // badge's name, the start of the not-run message and the site the prose links.
 const CHECKED = {
   Julia: { lang: 'julia', text: 'Julia cells are parsed and checked, but not run yet', site: 'https://go-embedded-julia.github.io/', error: /line 2:8: syntax error/ },
-  R: { lang: 'r', text: 'R cells are parsed and checked, but not run yet', site: 'https://go-embedded-r.github.io/', error: /line 2:8: syntax error/ },
   C: { lang: 'c', text: 'C cells are not run yet', site: 'https://github.com/go-embedded-c/c', error: /line 2:11: unexpected identifier/ },
 };
 
@@ -318,6 +317,72 @@ async function checkedExampleChecks(page, name, label) {
   if (!/checked, not run/.test(r.prose) || !r.links.includes(site))
     fail(`${name}: the prose should say ${label} cells are checked, not run, and link ${site}`);
   if (!error.test(r.prose)) fail(`${name}: the prose should show a syntax error caught at its line`);
+}
+
+// rExampleChecks reads the open 5-r notebook: R cells run (#29), so each says
+// R on its badge, shows what R prints and nothing in the failed or not-run
+// style; the warning comes in R's form; variables persist from one R cell to
+// the next; the Go cell beside them runs on its own variable; and the prose
+// says R cells run and shows R's own error, not a "checked, not run" notice.
+async function rExampleChecks(page, name) {
+  const r = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
+    return {
+      cells: cells.map((c) => ({
+        lang: c.dataset.lang,
+        out: (c.querySelector('.outputs').textContent || '').trim(),
+        skippedStyle: c.querySelectorAll('.outputs .output.skipped').length,
+        failStyle: c.querySelectorAll('.outputs .output.error').length,
+      })),
+      prose: [...document.querySelectorAll('#notebook .prose')].map((p) => p.textContent).join('\n'),
+    };
+  });
+  const rs = r.cells.filter((c) => c.lang === 'r');
+  console.log(`${name}: R example: ${rs.length} R cells: ` + rs.map((c) => JSON.stringify(c.out.slice(0, 40))).join(' | '));
+  if (rs.length < 3 || rs.some((c) => c.skippedStyle || c.failStyle)) fail(`${name}: an R cell looks failed or not run: ` + JSON.stringify(rs));
+  if (!rs.some((c) => c.out.includes('[1] 385') && c.out.includes('mean of the squares: 38.5')))
+    fail(`${name}: the R cell that reads another R cell's variables shows no real output: ` + JSON.stringify(rs));
+  if (!rs.some((c) => c.out.includes('[1] Inf') && c.out.includes('Warning message:') && c.out.includes('In ratio(1, 0) : division by zero')))
+    fail(`${name}: the R warning is not shown as R gives it: ` + JSON.stringify(rs));
+  const go = r.cells.filter((c) => c.lang === 'go');
+  if (!go.length || go.some((c) => c.out !== '42' || c.failStyle || c.skippedStyle)) fail(`${name}: the Go cell should run alone and show 42: ` + JSON.stringify(go));
+  if (/checked, not run|not run yet|cannot start/.test(r.prose + rs.map((c) => c.out).join(' '))) fail(`${name}: the example still says R is not run`);
+  if (!r.prose.includes('Error in sqrt("a") : non-numeric argument to mathematical function')) fail(`${name}: the prose does not show R's own error`);
+}
+
+// rLimitChecks: an R cell that runs away is stopped by the evaluator's own
+// bounds, with R's message, and the page stays usable: the cells after it say
+// they were not run, the worker is not killed (it is not the page's time limit
+// that ended it), and the next run, R and Go, works.
+async function rLimitChecks() {
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => fail('R limit page error: ' + e.message));
+  await page.goto(url);
+  await waitDone(page);
+  const cases = [
+    ['steps', 'while (TRUE) 0', /evaluation step limit reached/],
+    ['memory', 'x <- NULL\nfor (i in 1:1e6) x <- c(x, i)', /memory limit exceeded: more than 536870912 bytes of vectors allocated/],
+    ['recursion', 'f <- function(n) f(n + 1)\nf(1)', /evaluation nested too deeply/],
+    // heavier frames per evaluation: these overflowed the browser's call stack
+    // (a RangeError, the core lost) at a depth of 1500
+    ['recursion through sapply', 'g <- function(n) sapply(1, function(i) g(n + 1))\ng(1)', /evaluation nested too deeply/],
+    ['recursion through tryCatch', 'h <- function(n) tryCatch(h(n + 1), error = function(e) stop(e))\nh(1)', /evaluation nested too deeply/],
+  ];
+  for (const [what, src, want] of cases) {
+    const t0 = Date.now();
+    await openFile(page, `r-${what}.md`, '```r\n' + src + '\n```\n```r\n1 + 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    const cells = await codeState(page);
+    console.log(`R ${what} limit (${Date.now() - t0} ms): ` + JSON.stringify(cells[0].out.slice(0, 90)));
+    if (!want.test(cells[0].out) || /worker was killed/.test(cells[0].out)) fail(`R ${what}: a runaway cell was not stopped by the evaluator: ` + JSON.stringify(cells));
+    if (!/Not run: a cell above failed/.test(cells[1].out)) fail(`R ${what}: the cell after the stopped one should be skipped: ` + JSON.stringify(cells));
+    // the page is usable: an R cell and a Go cell run in the next notebook
+    await openFile(page, `r-after-${what}.md`, '```r\nxs <- 1:3\nxs * 2\n```\n```go\n1 + 1\n```\n');
+    await waitDone(page);
+    const after = await codeState(page);
+    if (after[0].out !== '[1] 2 4 6' || after[1].out !== '2') fail(`R ${what}: the run after the limit: ` + JSON.stringify(after));
+  }
+  await page.close();
 }
 
 // ---- Editing --------------------------------------------------------------
@@ -378,7 +443,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),Ruby,C · not runnable yet,Julia · not runnable yet,R · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),R,Ruby,C · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;
@@ -606,6 +671,7 @@ try {
     });
     for (const label of Object.keys(CHECKED))
       if (badges.want.includes(label + ' · not runnable yet')) await checkedExampleChecks(page, name, label);
+    if (badges.want.includes('R')) await rExampleChecks(page, name);
     // Download gives the notebook back byte for byte, as the site serves it.
     const file = await (await page.request.get(new URL(`notebooks/${name}.md`, page.url()).href)).body();
     const got = await downloadBytes(page);
@@ -685,6 +751,7 @@ try {
 
   await editingChecks(page);
   await limitChecks();
+  await rLimitChecks();
 } finally {
   await browser.close();
   if (server) server.close();
