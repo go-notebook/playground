@@ -72,7 +72,21 @@ Since v0.11.0 a code cell is the toolkit's `CodeEditor` drawn on a webcanvas sur
 - **Accessibility.** Each cell is one textbox for a screen reader, named *Go cell N* (or the cell's language).
 - **Browser behaviour.** IME input works, the browser's Ctrl+F finds code, a selection from prose into code copies, and the wheel scrolls the page (long lines scroll sideways).
 - **Sizing and memory.** A cell is as tall as its content, and a cell that is off screen frees its drawing memory.
-- **Fallback.** The page renders first with the plain `<textarea>` editor, and keeps it if the editor fails to load.
+- **Text size.** Cells are set in Go Mono at **13 CSS px** (`editor.DefaultFontPx`, `Config.FontPx` to change it), the same size on a plain and on a dense display (the font is built at 13 x the device pixel ratio). Before, a cell used the toolkit's built-in 5x7 bitmap, a font for chrome: its text layer measured 8.25 CSS px and its rows 11 (`TestACellHasTheSameCSSMetricsAtDPR1AndDPR2` now asserts about 14.25 and 19).
+- **Minimap.** A whole-cell overview sits on the right of a cell at least 480 px wide (hidden below, so a 360 px page keeps its text width), with a tick for each comment. Clicking it moves the caret to that line, Shift-click or a drag selects; it does not change the cell's height.
+- **Line comments.** The gutter left of the line numbers shows a marker on each commented line. Click the gutter of a line (or press Ctrl+Shift+M for the caret's line) to add, edit or delete its comment in a panel under the line: type, Enter saves, Escape cancels, an empty comment is deleted. A comment stays on its line as the code is edited. Each marker is a button for a screen reader, *Comment on line N: text*. Comments are plain text, at most 256 per cell and 2000 characters each.
+- **How comments are stored.** In the notebook's Markdown, as one HTML comment on the line right after the cell's closing fence, so they survive Download .md and Open, are invisible in any Markdown viewer, and do not change what the notebook runs (the comment is not in the cell):
+
+  ````markdown
+  ```go
+  x := 21
+  x * 2
+  ```
+  <!-- gonb:notes {"v":1,"notes":[{"line":2,"text":"doubled"}]} -->
+  ````
+
+  `line` is 1-based in the cell's code. go-notebook's `format` package keeps that line, byte for byte, as the first line of the prose after the cell; the page edits that prose without it (`engine.Cells` hands it to the code cell as `notes`, and `engine.Edit` writes it back, with an op `notes`), and a cell moved or deleted takes its comment with it. A comment that does not parse stays prose. The text is untrusted: the comment line is bounded to 1 MiB, notes to 256 and 2000 characters, control characters are dropped, and `<`, `>`, `&` and `-` are escaped so no text can close the HTML comment (package `notes`, fuzzed).
+- **Fallback.** The page renders first with the plain `<textarea>` editor, and keeps it if the editor fails to load. The textarea has no comments: it keeps the ones the notebook has.
 - **Size.** The editor adds 1.8 MB brotli (9.8 MB raw).
 
 ### While it loads
