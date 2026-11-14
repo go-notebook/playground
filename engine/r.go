@@ -41,11 +41,11 @@ var RLimits = nbruntime.RLimits{MaxAlloc: 512 << 20, MaxSteps: 20_000_000, Timeo
 // loses the core), whatever the other limits say, and so does a recursion
 // through sapply or tryCatch at 1500 (heavier frames per evaluation). The
 // nesting is counted in evaluations, about three to a call of a small function:
-// 600 is a recursion of 200 calls, and measured (Chromium) to end an infinite
+// 300 is a recursion of about 100 calls (600 passed locally but overflowed through tryCatch on CI's Chromium), and measured (Chromium) to end an infinite
 // recursion with R's own error for plain calls, sapply, tryCatch, do.call and
 // Reduce. R's own default is 5000, for a machine with a process's stack; the
 // right bound is the evaluator's to know (go-embedded-r), not the page's.
-var RDepth = 600
+var RDepth = 300
 
 // rSide is the R half of a session: one interpreter for every R cell of the
 // notebook, whose variables persist from cell to cell and stay apart from the

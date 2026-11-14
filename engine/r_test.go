@@ -118,7 +118,7 @@ func TestRLimitsStopARunawayCell(t *testing.T) {
 	}{
 		{"steps", nbruntime.RLimits{MaxSteps: 100_000, Timeout: time.Minute}, "while(TRUE) 0", "evaluation step limit reached"},
 		{"allocation", nbruntime.RLimits{MaxAlloc: 32 << 20, Timeout: time.Minute}, "x <- NULL\nfor (i in 1:100000) x <- c(x, i)", "memory limit exceeded: more than 33554432 bytes of vectors allocated"},
-		{"time", nbruntime.RLimits{MaxSteps: 1 << 40, Timeout: 100 * time.Millisecond}, "repeat tryCatch(0, error = function(e) NULL)", "ran longer than 100ms, the limit"},
+		{"time", nbruntime.RLimits{MaxSteps: 1 << 30, Timeout: 100 * time.Millisecond}, "repeat tryCatch(0, error = function(e) NULL)", "ran longer than 100ms, the limit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			withRLimits(t, tc.l, func() {
@@ -146,11 +146,11 @@ func TestPageRLimits(t *testing.T) {
 	}
 	// The nesting bound is the page's, under the browser's call stack, and a
 	// recursion the bound allows still runs.
-	if RDepth <= 0 || RDepth > 600 {
+	if RDepth <= 0 || RDepth > 300 {
 		t.Errorf("RDepth %d: the browser's call stack overflows well before go-embedded-r's 5000", RDepth)
 	}
-	res := Run("```r\nf <- function(n) if (n == 0) 0 else 1 + f(n - 1)\nf(150)\n```\n```r\ng <- function(n) sapply(1, function(i) g(n + 1))\ng(1)\n```\n")
-	if res[0].Output != "[1] 150\n" || res[0].Error != "" || !strings.HasPrefix(res[1].Error, "Error: evaluation nested too deeply") {
+	res := Run("```r\nf <- function(n) if (n == 0) 0 else 1 + f(n - 1)\nf(60)\n```\n```r\ng <- function(n) sapply(1, function(i) g(n + 1))\ng(1)\n```\n")
+	if res[0].Output != "[1] 60\n" || res[0].Error != "" || !strings.HasPrefix(res[1].Error, "Error: evaluation nested too deeply") {
 		t.Errorf("recursion: %+v", res)
 	}
 	if RLimits.Timeout <= 0 || RLimits.Timeout >= 30*time.Second {
