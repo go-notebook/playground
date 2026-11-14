@@ -259,10 +259,10 @@ func TestFailed(t *testing.T) {
 func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
 	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
+		`{"name":"r","label":"R","runs":true,"core":"ruby"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
 		`{"name":"c","label":"C","runs":false,"core":"ruby"},` +
-		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"},` +
-		`{"name":"r","label":"R","runs":false,"core":"ruby"}]`
+		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)
 	}

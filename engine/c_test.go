@@ -17,7 +17,7 @@ import (
 // what it defines are blocked, with C's message, also next to Julia and R
 // cells in the same notebook; the others run.
 func TestCCells(t *testing.T) {
-	c, j, r := analysis.RunOf("c"), analysis.RunOf("julia"), analysis.RunOf("r")
+	c, j := analysis.RunOf("c"), analysis.RunOf("julia")
 	nb := "```go\nn := 10\n```\n" +
 		"```c\ntypedef int myint;\n#define N 10\n```\n" +
 		"```c\nmyint total = N * N;\n```\n" +
@@ -27,8 +27,8 @@ func TestCCells(t *testing.T) {
 		"```r\nq <- 1\n```\n" +
 		"```go\nn * 2\n```\n"
 	res := Run(nb)
-	want := []string{"", c.NotRun, c.NotRun, c.Blocked(2), j.NotRun, j.Blocked(4), r.NotRun, ""}
-	status := []string{"", StatusNotRun, StatusNotRun, StatusBlocked, StatusNotRun, StatusBlocked, StatusNotRun, ""}
+	want := []string{"", c.NotRun, c.NotRun, c.Blocked(2), j.NotRun, j.Blocked(4), "", ""}
+	status := []string{"", StatusNotRun, StatusNotRun, StatusBlocked, StatusNotRun, StatusBlocked, "", ""} // the R cell runs
 	for i, w := range want {
 		if res[i].Error != w || res[i].Skipped || res[i].Status != status[i] {
 			t.Errorf("cell %d: %+v, want %q (%q)", i, res[i], w, status[i])

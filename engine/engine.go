@@ -152,9 +152,13 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			started(i)
 		}
 		start := time.Now()
-		if c.Lang == analysis.Ruby {
+		switch c.Lang {
+		case analysis.Ruby:
 			out[i].Output, out[i].Display, out[i].Error = s.rubyCell(c.Source)
-		} else {
+		case "r":
+			// R's variables stay R's (analysis.Isolated): nothing crosses.
+			out[i].Output, out[i].Display, out[i].Error = s.rCell(c.Source)
+		default:
 			out[i].Output, out[i].Display, out[i].Error = s.cell(c.Source)
 			s.goDefines(c.Source)
 		}
@@ -177,6 +181,8 @@ type session struct {
 	// by the first Ruby cell.
 	goVars map[string]bool
 	ruby   *rubySide
+	// r is the R side (r.go), made by the first R cell.
+	r *rSide
 }
 
 // goDefines records the variables a Go cell defines: what the notebook
