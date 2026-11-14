@@ -59,10 +59,9 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 	if len(markdown) > MaxNotebook {
 		return Edited{}, fmt.Errorf("the notebook is %d bytes; the playground edits notebooks up to %d", len(markdown), MaxNotebook)
 	}
-	cells := format.Parse(markdown).Cells
+	cells, ns := detach(format.Parse(markdown).Cells)
 	// The annotation comments are out of the prose while the ops run, and travel
 	// with their code cell (ns is indexed like cells).
-	ns := detach(cells)
 	focus := 0
 	for _, op := range ops {
 		n := len(cells)
@@ -146,14 +145,22 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 		return Edited{}, fmt.Errorf("the notebook would be %d bytes; the playground edits notebooks up to %d", len(out), MaxNotebook)
 	}
 	e := Edited{Markdown: out, Cells: Cells(out)}
-	for i, c := range format.Parse(out).Cells {
+	parsed := format.Parse(out).Cells
+	shown := 0 // the index among the cells the page shows, which have no comment-only prose
+	for i, c := range parsed {
+		if i > 0 && parsed[i-1].Kind == format.Code && c.Kind == format.Prose {
+			if _, rest, ok := notes.Split(c.Source); ok && rest == "" {
+				continue
+			}
+		}
 		start := c.Line
 		if c.Kind == format.Code {
 			start-- // its opening fence
 		}
 		if start <= line {
-			e.Focus = i
+			e.Focus = shown
 		}
+		shown++
 	}
 	return e, nil
 }

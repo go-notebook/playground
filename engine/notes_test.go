@@ -143,3 +143,48 @@ func TestAMalformedCommentIsJustProse(t *testing.T) {
 		t.Fatalf("%v %q", err, e.Markdown)
 	}
 }
+
+func TestACommentNeverShowsAsACellOfItsOwn(t *testing.T) {
+	two := "```go\nx := 1\n```\n```go\ny := 2\n```\n"
+	e, err := Edit(two, []Op{{Op: "notes", Index: 0, Notes: []notes.Note{{Line: 1, Text: "c"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(e.Markdown, "gonb:notes") {
+		t.Fatal("not stored")
+	}
+	cells := Cells(e.Markdown)
+	if len(cells) != 2 || cells[0].Kind != "code" || cells[1].Kind != "code" || len(cells[0].Notes) != 1 {
+		t.Fatalf("cells %+v", cells)
+	}
+	if e.Focus != 0 {
+		t.Fatalf("focus %d", e.Focus)
+	}
+	// a delete of the next cell, and of this one, leaves no comment cell behind
+	if d, _ := Edit(e.Markdown, []Op{{Op: "delete", Index: 1}}); len(Cells(d.Markdown)) != 1 || len(Cells(d.Markdown)[0].Notes) != 1 {
+		t.Fatalf("%q", d.Markdown)
+	}
+	d, _ := Edit(e.Markdown, []Op{{Op: "delete", Index: 0}})
+	if len(Cells(d.Markdown)) != 1 || strings.Contains(d.Markdown, "gonb:notes") {
+		t.Fatalf("%q", d.Markdown)
+	}
+	// focus on a cell after the comment cell counts the cells the page shows
+	f, _ := Edit(e.Markdown, []Op{{Op: "source", Index: 1, Source: "y := 3\n"}})
+	if f.Focus != 1 {
+		t.Fatalf("focus %d, want 1", f.Focus)
+	}
+}
+
+func TestAnEmptiedProseCellIsNotWrittenAndKeepsTheFocusSane(t *testing.T) {
+	md := "```go\nx := 1\n```\n\nprose\n\n```go\ny := 2\n```\n"
+	e, err := Edit(md, []Op{{Op: "source", Index: 1, Source: ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(Cells(e.Markdown)) != 2 {
+		t.Fatalf("%q", e.Markdown)
+	}
+	if e.Focus < 0 || e.Focus > 1 {
+		t.Fatalf("focus %d", e.Focus)
+	}
+}

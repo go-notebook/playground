@@ -69,9 +69,9 @@ func TestBounds(t *testing.T) {
 	if _, _, ok := Split(big); ok {
 		t.Fatal("an oversize comment was read")
 	}
-	// one note per line, the last wins
+	// one note per line: two on a line are joined, none is lost
 	c := Clean([]Note{{Line: 2, Text: "a"}, {Line: 2, Text: "b"}})
-	if len(c) != 1 || c[0].Text != "b" {
+	if len(c) != 1 || c[0].Text != "a\nb" {
 		t.Fatalf("%+v", c)
 	}
 }

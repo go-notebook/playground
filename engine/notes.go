@@ -14,21 +14,34 @@ import (
 // edited as the reader sees it, a deleted or moved cell takes its comments with
 // it, and what a notebook runs is unchanged: the comment is not in any code cell.
 
-// detach takes the annotation comment out of the prose after each code cell of
-// cells (in place) and returns the notes read, indexed like cells. A comment
+// detach takes the annotation comment out of the prose after each code cell and
+// returns the cells without it, and the notes read, indexed like those cells. A
+// prose cell that was only the comment (a commented code cell followed by another
+// cell) is dropped, so the comment never shows as a cell of its own. A comment
 // that does not parse stays in the prose.
-func detach(cells []format.Cell) [][]notes.Note {
-	out := make([][]notes.Note, len(cells))
-	for i := 0; i+1 < len(cells); i++ {
-		if cells[i].Kind != format.Code || cells[i+1].Kind != format.Prose {
+func detach(cells []format.Cell) ([]format.Cell, [][]notes.Note) {
+	out := make([]format.Cell, 0, len(cells))
+	ns := make([][]notes.Note, 0, len(cells))
+	for i := 0; i < len(cells); i++ {
+		c := cells[i]
+		out, ns = append(out, c), append(ns, nil)
+		if c.Kind != format.Code || i+1 >= len(cells) || cells[i+1].Kind != format.Prose {
 			continue
 		}
-		if n, rest, ok := notes.Split(cells[i+1].Source); ok {
-			out[i] = n
-			cells[i+1].Source = rest
+		n, rest, ok := notes.Split(cells[i+1].Source)
+		if !ok {
+			continue
 		}
+		ns[len(ns)-1] = n
+		if rest == "" {
+			i++ // the prose was the comment alone
+			continue
+		}
+		next := cells[i+1]
+		next.Source = rest
+		cells[i+1] = next
 	}
-	return out
+	return out, ns
 }
 
 // attach writes each code cell's notes as a comment line at the start of the

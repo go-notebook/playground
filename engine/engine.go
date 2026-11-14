@@ -96,8 +96,7 @@ type Cell struct {
 // cell as Notes; the cells are otherwise one for one with format.Parse's.
 func Cells(markdown string) []Cell {
 	var out []Cell
-	cells := format.Parse(markdown).Cells
-	ns := detach(cells)
+	cells, ns := detach(format.Parse(markdown).Cells)
 	for i, c := range cells {
 		k := "prose"
 		if c.Kind == format.Code {

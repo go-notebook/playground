@@ -57,7 +57,7 @@ type payload struct {
 
 // Clean returns notes bounded and plain: control characters dropped (a tab
 // becomes a space), text cut to MaxRunes, a note with no text or a line below 1
-// dropped, one note per line (the last wins), at most MaxNotes, ordered by line.
+// dropped, one note per line (notes on the same line are joined, in order), at most MaxNotes, ordered by line.
 func Clean(notes []Note) []Note {
 	last := map[int]string{}
 	for _, n := range notes {
@@ -65,9 +65,10 @@ func Clean(notes []Note) []Note {
 			continue
 		}
 		if t := Sanitize(n.Text); strings.TrimSpace(t) != "" {
+			if prev, ok := last[n.Line]; ok {
+				t = Sanitize(prev + "\n" + t) // two on one line: neither is lost
+			}
 			last[n.Line] = t
-		} else {
-			delete(last, n.Line)
 		}
 	}
 	out := make([]Note, 0, len(last))
