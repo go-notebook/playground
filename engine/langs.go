@@ -17,7 +17,7 @@ type pageR struct{ analysis.Language }
 
 func (pageR) Run() analysis.Run {
 	return analysis.Run{
-		NotRun: "R cells are parsed and checked, but not run yet: execution arrives with go-embedded-r's evaluator (milestones M2 and M3)",
+		NotRun: "R cells are parsed and checked, but not run yet in the browser: go-notebook runs them in a worker process, which a page cannot start",
 		Blocked: func(c int) string {
 			return fmt.Sprintf("blocked: it depends on cell %d, an R cell, and R cells are not run yet", c)
 		},

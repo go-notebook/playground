@@ -109,11 +109,11 @@ A ` ```julia ` cell is parsed and checked as in [go-notebook](https://github.com
 
 ### R cells: checked, not run yet
 
-A ` ```r ` cell is parsed and checked as in [go-notebook](https://github.com/go-notebook/notebook#r-cells-parsed-and-checked-not-run-yet) (v0.8.0), with [go-embedded-r](https://github.com/go-embedded-r/r)'s parser compiled to WebAssembly. It does not run: go-embedded-r has no evaluator yet (its milestones M2 and M3).
+A ` ```r ` cell is parsed and checked as in [go-notebook](https://github.com/go-notebook/notebook#r-cells-parsed-and-checked-not-run-yet) (v0.8.0), with [go-embedded-r](https://github.com/go-embedded-r/r)'s parser compiled to WebAssembly. It does not run here: go-notebook (v0.10.0 and later) runs R cells with go-embedded-r's evaluator in a worker process, and a browser page cannot start one. `engine/langs.go` keeps the registry's R checked, not run, for that reason.
 
 - Its badge reads *R · not runnable yet*, and the + menu offers it. Neither needed a change to the page: both come from go-notebook's registry.
 - A syntax error is shown at its line and column, in R's own words: `line 2:8: syntax error: unexpected symbol`.
-- A cell without one is not run, by design, and says *R cells are parsed and checked, but not run yet: execution arrives with go-embedded-r's evaluator (milestones M2 and M3)*, with the typed status `notrun`. The cells that read what it defines are `blocked`. `cmd/build` accepts both, as for Julia, because it asks go-notebook whether the language runs (`analysis.RunOf`) instead of testing for a name.
+- A cell without one is not run, by design, and says *R cells are parsed and checked, but not run yet in the browser: go-notebook runs them in a worker process, which a page cannot start*, with the typed status `notrun`. The cells that read what it defines are `blocked`. `cmd/build` accepts both, as for Julia, because it asks go-notebook whether the language runs (`analysis.RunOf`) instead of testing for a name.
 - A cell whose names cannot be known from its text (`<<-`, `eval`, `assign` with a computed name, `library`) depends on every cell above it.
 - The example: [`examples/notebook/5-r.md`](examples/notebook/5-r.md), the site's `#5-r` notebook.
 - The parser is in the second core only (0.3 MB of `playground-ruby.wasm`, 54.8 MB); the page checks R cells there.
