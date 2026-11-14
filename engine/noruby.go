@@ -17,6 +17,18 @@ func (s *session) rubyCell(string) (string, []map[string]string, string) {
 	return "", nil, "this build runs Go cells only (in the page, the Ruby core is loaded for a notebook with Ruby cells)"
 }
 
+// RSupported reports whether this build runs R cells: the default core does
+// not, the second one does (r.go).
+const RSupported = false
+
+type rSide struct{}
+
+// rCell is what the default core says of an R cell; the page never sends it
+// one.
+func (s *session) rCell(string) (string, []map[string]string, string) {
+	return "", nil, "this build runs Go cells only (in the page, the second core is loaded for a notebook with R cells)"
+}
+
 // JuliaSupported reports whether this build checks Julia cells: the default
 // core leaves go-embedded-julia's parser out (2 MB), and the page loads the
 // core built with the tag ruby, which has it, for a notebook with a Julia
