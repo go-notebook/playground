@@ -218,7 +218,7 @@
   const undo = []; // the Markdown before each delete
 
   function load(name, markdown, cells, title) {
-    nb = { name, example: examples.some((x) => x.name === name) ? name : null, title, markdown, cells, dirty: new Set(), notes: new Map() };
+    nb = { name, example: examples.some((x) => x.name === name) ? name : null, title, markdown, cells, dirty: new Set(), annotated: new Set(), notes: new Map() };
     if (worker) ensureEngine(cells);
     else if (needsRubyCore(cells)) engine = 'ruby';
     undo.length = 0;
@@ -260,6 +260,10 @@
     const next = chain.then(async () => {
       const sent = new Map([...nb.dirty].map((i) => [i, nb.cells[i].source]));
       const ops = [...sent].map(([index, source]) => ({ op: 'source', index, source }));
+      // The line annotations of the cells whose comments changed: the core writes
+      // them as a comment after the cell's fence (package notes).
+      const sentNotes = new Map([...nb.annotated].filter((i) => nb.cells[i] && nb.cells[i].kind === 'code').map((i) => [i, JSON.stringify(nb.cells[i].notes || [])]));
+      for (const [index, json] of sentNotes) ops.push({ op: 'notes', index, notes: JSON.parse(json) });
       if (op) ops.push(op);
       if (!ops.length) return null;
       const reply = await call('edit', { markdown: nb.markdown, ops });
@@ -275,9 +279,11 @@
         // Only text changed: keep the editors (and the caret); keep dirty
         // what was typed while the core worked.
         for (const [i, src] of sent) if (nb.cells[i].source === src) nb.dirty.delete(i);
+        for (const [i, json] of sentNotes) if (JSON.stringify(nb.cells[i].notes || []) === json) nb.annotated.delete(i);
         return e;
       }
       nb.dirty.clear();
+      nb.annotated.clear();
       // A cell that is still there, same language and text, keeps what it
       // showed (marked stale until the next run).
       const pool = nb.cells.filter((c) => c.kind === 'code' && c.el);
@@ -332,6 +338,7 @@
     nb.markdown = before;
     nb.cells = cells;
     nb.dirty.clear();
+    nb.annotated.clear();
     if (nb.example) edited.set(nb.example, before);
     render();
     setStatus('Delete undone.');
@@ -510,6 +517,11 @@
         ta.dispatchEvent(new Event('input'));
       },
       onHeight: size,
+      notes: c.notes || [],
+      onNotes: (notes) => {
+        c.notes = notes;
+        nb.annotated.add(index);
+      },
     });
     const s = {
       handle,

@@ -24,7 +24,6 @@
 package notes
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
@@ -118,13 +117,8 @@ func Line(notes []Note) string {
 	if len(notes) == 0 {
 		return ""
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(true) // < > & as \u00XX
-	if err := enc.Encode(payload{V: 1, Notes: notes}); err != nil {
-		return ""
-	}
-	js := strings.TrimRight(buf.String(), "\n")
+	b, _ := json.Marshal(payload{V: 1, Notes: notes}) // a struct of ints and strings always encodes; < > & become \u00XX
+	js := string(b)
 	js = strings.ReplaceAll(js, "-", "\\"+"u002d") // no "--" can end the comment: "-" only occurs inside strings
 	return prefix + js + suffix + "\n"
 }

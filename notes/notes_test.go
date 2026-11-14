@@ -2,6 +2,7 @@ package notes
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -100,4 +101,29 @@ func FuzzSplit(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestMoreThanTheBoundIsCutAndAnInvalidRuneIsDropped(t *testing.T) {
+	var js strings.Builder
+	js.WriteString(`<!-- gonb:notes {"v":1,"notes":[`)
+	for i := 1; i <= MaxNotes+5; i++ {
+		if i > 1 {
+			js.WriteString(",")
+		}
+		js.WriteString(`{"line":` + strconv.Itoa(i) + `,"text":"x"}`)
+	}
+	js.WriteString(`]} -->` + "\n")
+	got, _, ok := Split(js.String())
+	if !ok || len(got) != MaxNotes {
+		t.Fatalf("ok=%v, %d notes", ok, len(got))
+	}
+	if Sanitize("a\xffb") != "ab" {
+		t.Fatalf("%q", Sanitize("a\xffb"))
+	}
+}
+
+func TestCarriageReturnsAreDropped(t *testing.T) {
+	if got := Sanitize("a\r\nb\x7f"); got != "a\nb" {
+		t.Fatalf("%q", got)
+	}
 }

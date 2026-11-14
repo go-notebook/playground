@@ -280,6 +280,9 @@ var (
 	fontCache = map[int]toolkit.Font{}
 )
 
+// monoTTF is the face: Go Mono, embedded. A variable so that a test can break it.
+var monoTTF = gomono.TTF
+
 // monoFont is Go Mono at px device pixels (a nil font if the face cannot be
 // parsed, which the embedded one never fails to be).
 func monoFont(px int) toolkit.Font {
@@ -288,7 +291,7 @@ func monoFont(px int) toolkit.Font {
 	if f, ok := fontCache[px]; ok {
 		return f
 	}
-	f, err := toolkit.NewTrueTypeFont(gomono.TTF, px)
+	f, err := toolkit.NewTrueTypeFont(monoTTF, px)
 	if err != nil {
 		return nil
 	}
