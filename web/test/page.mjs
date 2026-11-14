@@ -382,6 +382,25 @@ async function rLimitChecks() {
     const after = await codeState(page);
     if (after[0].out !== '[1] 2 4 6' || after[1].out !== '2') fail(`R ${what}: the run after the limit: ` + JSON.stringify(after));
   }
+  // Deeply nested DATA is Go recursion the call-depth bound does not count: it
+  // overflows the browser's call stack and kills the Go instance. The page
+  // restarts the core, says so on the cell, and the next run works.
+  for (const src of ['x <- list()\nfor (i in 1:50000) x <- list(x)\nidentical(x, x)', 'x <- list()\nfor (i in 1:50000) x <- list(x)\nlength(unlist(x))']) {
+    const workers = await page.evaluate(() => window.playgroundWorkers);
+    await openFile(page, 'r-nested.md', '```r\n' + src + '\n```\n');
+    await page.waitForSelector(DONE, { timeout: 120000 });
+    // a RangeError leaves the Go instance dead: the core must be a new worker
+    const restarted = await page.evaluate((w) => window.playgroundWorkers - w, workers);
+    if (restarted !== 1) fail(`R nested data: ${restarted} worker starts after the failed run, want 1`);
+    const cells = await codeState(page);
+    console.log('R nested data: ' + JSON.stringify(cells[0].out.slice(0, 80)));
+    if (!/the runtime failed on this cell/.test(cells[0].out) || !/restarts/.test(await page.textContent('#status')))
+      fail('R nested data: the failure is not said on the cell: ' + JSON.stringify(cells));
+    await openFile(page, 'r-after-nested.md', '```r\n1 + 1\n```\n```go\n2 + 2\n```\n');
+    await page.waitForFunction(() => document.body.dataset.state === 'done', null, { timeout: 120000 });
+    const after = await codeState(page);
+    if (after[0].out !== '[1] 2' || after[1].out !== '4') fail('R nested data: the run after the restart: ' + JSON.stringify(after));
+  }
   await page.close();
 }
 

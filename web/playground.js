@@ -66,6 +66,7 @@
   let overLimit = false;
 
   function startWorker() {
+    window.playgroundWorkers = (window.playgroundWorkers || 0) + 1; // for the browser test
     ready = false;
     fatal = null;
     updateBadges();
@@ -111,8 +112,16 @@
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
-      if (m.type === 'error') p.reject(new Error(m.error));
-      else p.resolve(m);
+      if (m.type === 'error') {
+        // The core threw out of a call (a RangeError from the browser's call
+        // stack, say): its Go instance is dead and would answer every later
+        // call with the same error. Restart it; each run starts a session of
+        // its own, so no state of the notebook is lost but this run's.
+        const err = new Error(m.error);
+        err.crashed = true;
+        p.reject(err);
+        stop();
+      } else p.resolve(m);
     };
   }
 
@@ -913,6 +922,15 @@
           c.el.out.append(pre(`stopped: the cell ran longer than ${CELL_LIMIT_S}s, the limit; its worker was killed`, 'error'));
         }
         setStatus(`Cell ${runningCell + 1} ran longer than ${CELL_LIMIT_S} s and was stopped. The runtime restarts.`);
+      } else if (err.crashed) {
+        const code = nb.cells.filter((c) => c.kind === 'code');
+        const c = code[runningCell];
+        if (c) {
+          c.el.cell.classList.remove('stale');
+          c.el.out.textContent = '';
+          c.el.out.append(pre(`stopped: the runtime failed on this cell (${err.message}), probably too deeply nested data; its worker was restarted and the notebook's other values are lost: run again`, 'error'));
+        }
+        setStatus('Cell ' + (runningCell + 1) + ' made the runtime fail (' + err.message + '). The runtime restarts; run again when ready.');
       } else setStatus(err.message === 'stopped' ? 'Stopped. The runtime restarts; run again when ready.' : 'Error: ' + err.message);
       document.body.dataset.state = 'error';
     } finally {
