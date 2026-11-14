@@ -223,6 +223,15 @@ func TestACellHasTheSameCSSMetricsAtDPR1AndDPR2(t *testing.T) {
 	near("the row pitch", m1.Pitch, m2.Pitch)
 	near("the cell height", m1.Height, m2.Height)
 	near("the text's left edge", m1.Left, m2.Left)
+	// ...and it is the size of code: the toolkit's own 5x7 bitmap, which the cells
+	// used before, measured a font of 8.25 CSS px in the text layer and a row of
+	// 11. A 13 px editor font has a 15 px glyph box and a 19 px row, so the layer
+	// (which sizes itself at 3/4 of the row) is 14.25.
+	for dpr, m := range map[float64]metrics{1: m1, 2: m2} {
+		if m.Font < 13 || m.Font > 16 || m.Pitch < 18 || m.Pitch > 22 {
+			t.Errorf("at dpr %v the layer font is %.2f CSS px and the row pitch %.2f; want about 14.25 and 19 (the 5x7 bitmap gave 8.25 and 11)", dpr, m.Font, m.Pitch)
+		}
+	}
 }
 
 // Sideways: a horizontal wheel over a cell with a long line moves the text
@@ -270,5 +279,104 @@ func TestTheWheelScrollsALongLineSidewaysAndTheEditorKeepsNoVerticalWheel(t *tes
 	until(t, ctx, "the page to scroll", 5*time.Second, `window.scrollY > `+ftoa(y0))
 	if frame() != moved {
 		t.Error("a vertical wheel moved the text of the cell")
+	}
+}
+
+// A comment on a line of code is stored in the notebook, in an HTML comment
+// after the cell's fence: it is read when the notebook opens, shows as a button
+// in the accessibility tree, can be added from the cell, and is in the Markdown
+// the page downloads, with the code and the prose as they were.
+func TestLineAnnotationsLoadShowAndSave(t *testing.T) {
+	const stored = `<!-- gonb:notes {"v":1,"notes":[{"line":2,"text":"doubled"}]} -->`
+	md := strings.Replace(testNotebook, "```\n\nProse between", "```\n"+stored+"\n\nProse between", 1)
+	ctx := open(t, serve(t), 800, 600, 1)
+	editorUp(t, ctx)
+	openNotebook(t, ctx, md, testCells)
+	until(t, ctx, "both code cells on their canvases", time.Minute,
+		`[...playgroundEditor.surfaces].filter((s) => s.mounted).length === 2`)
+	time.Sleep(600 * time.Millisecond)
+	// the stored comment is on the cell's line 2, as a button, and the prose
+	// after the cell does not show the comment's line
+	has := func(name string) bool {
+		for _, n := range axTree(t, ctx) {
+			if !n.Ignored && n.Role == "button" && n.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("Comment on line 2: doubled") {
+		t.Fatal("no button 'Comment on line 2: doubled' in the accessibility tree")
+	}
+	if ev[bool](t, ctx, `document.querySelector('#notebook').textContent.includes('gonb:notes')`) {
+		t.Error("the storage comment shows in the prose")
+	}
+	// add one on line 1 from the cell: click its gutter, type, Enter
+	r := ev[[]float64](t, ctx, `(() => {
+  const c = document.querySelectorAll('#notebook .cell[data-lang]')[0].querySelector('canvas');
+  c.scrollIntoView({ block: 'center' });
+  const b = c.getBoundingClientRect();
+  return [b.left, b.top];
+})()`)
+	if _, err := chromedp.Run(ctx, chromedp.MouseClickXY(r[0]+8, r[1]+4+9)); err != nil {
+		t.Fatal(err)
+	}
+	until(t, ctx, "the editor to take the keyboard", 10*time.Second,
+		`document.activeElement && document.activeElement.hasAttribute('data-webcanvas-layer')`)
+	time.Sleep(300 * time.Millisecond)
+	for _, k := range []string{"o", "n", "e"} {
+		if _, err := chromedp.Run(ctx, chromedp.KeyEvent(k)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Enter as a keyboard sends it: one keydown, then the key up
+	for _, typ := range []input.DispatchKeyEventType{input.DispatchKeyEventTypeRawKeyDown, input.DispatchKeyEventTypeKeyUp} {
+		if _, err := chromedp.Call(ctx, input.DispatchKeyEvent, input.DispatchKeyEventParams{Type: typ, Key: "Enter", Code: "Enter", WindowsVirtualKeyCode: 13}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !has("Comment on line 1: one") {
+		if time.Now().After(deadline) {
+			t.Fatalf("no button 'Comment on line 1: one'; the cells hold %s", ev[string](t, ctx, `JSON.stringify([...playgroundEditor.surfaces].map((s) => [s.handle.text(), s.handle.notes()]))`))
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// the downloaded Markdown
+	ev[any](t, ctx, `(() => {
+  const o = URL.createObjectURL;
+  URL.createObjectURL = (b) => { b.text().then((s) => (window.__md = s)); return o.call(URL, b); };
+  document.getElementById('download').click();
+})()`)
+	until(t, ctx, "the downloaded notebook", 10*time.Second, `typeof window.__md === 'string'`)
+	got := ev[string](t, ctx, `window.__md`)
+	if !strings.Contains(got, "\n```\n<!-- gonb:notes ") || !strings.Contains(got, `"line":1,"text":"one"`) || !strings.Contains(got, `"line":2,"text":"doubled"`) {
+		t.Fatalf("the downloaded notebook does not hold both comments:\n%s", got)
+	}
+	if !strings.Contains(got, "```go\n"+cell1+"\n```\n") || !strings.Contains(got, "Prose between the cells.") {
+		t.Errorf("the code or the prose changed:\n%s", got)
+	}
+}
+
+// The minimap on the right of a cell, like the annotation column, is the
+// canvas's: the text layer, which takes the pointer wherever its element is,
+// does not cover it (a click on it moves the caret to that line).
+func TestTheMinimapAndTheGutterAreNotUnderTheTextLayer(t *testing.T) {
+	ctx := editorPage(t)
+	time.Sleep(600 * time.Millisecond)
+	for name, at := range map[string]string{"minimap": "b.right - 20", "annotation column": "b.left + 6", "text": "b.left + 200"} {
+		got := ev[string](t, ctx, `(() => {
+  const c = document.querySelectorAll('#notebook .cell[data-lang]')[0].querySelector('canvas');
+  c.scrollIntoView({ block: 'center' });
+  const b = c.getBoundingClientRect();
+  return document.elementFromPoint(`+at+`, b.top + 12).tagName;
+})()`)
+		want := "CANVAS"
+		if name == "text" {
+			want = "DIV" // the text layer, as ever
+		}
+		if got != want {
+			t.Errorf("at the %s the pointer reaches a %s, want a %s", name, got, want)
+		}
 	}
 }

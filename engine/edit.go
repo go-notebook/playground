@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-notebook/notebook/analysis"
 	"github.com/go-notebook/notebook/format"
+	"github.com/go-notebook/playground/notes"
 )
 
 // The page edits a notebook through the format package: the Markdown is the
@@ -30,12 +31,14 @@ type Op struct {
 	// Op is "source" (set Source), "lang" (set Lang: a language, or
 	// "markdown" to make the cell prose), "insert" (a new cell before Index,
 	// or at the end when Index is the number of cells), "delete", or "move"
-	// (to the position To).
-	Op     string `json:"op"`
-	Index  int    `json:"index"`
-	Source string `json:"source,omitempty"`
-	Lang   string `json:"lang,omitempty"`
-	To     int    `json:"to,omitempty"`
+	// (to the position To), or "notes" (set the line annotations of the code cell
+	// at Index to Notes; see package notes).
+	Op     string       `json:"op"`
+	Index  int          `json:"index"`
+	Source string       `json:"source,omitempty"`
+	Lang   string       `json:"lang,omitempty"`
+	To     int          `json:"to,omitempty"`
+	Notes  []notes.Note `json:"notes,omitempty"`
 }
 
 // Edited is a notebook after edits.
@@ -56,7 +59,9 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 	if len(markdown) > MaxNotebook {
 		return Edited{}, fmt.Errorf("the notebook is %d bytes; the playground edits notebooks up to %d", len(markdown), MaxNotebook)
 	}
-	cells := format.Parse(markdown).Cells
+	cells, ns := detach(format.Parse(markdown).Cells)
+	// The annotation comments are out of the prose while the ops run, and travel
+	// with their code cell (ns is indexed like cells).
 	focus := 0
 	for _, op := range ops {
 		n := len(cells)
@@ -77,6 +82,15 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 				return Edited{}, err
 			}
 			cells[op.Index] = c
+			if c.Kind != format.Code {
+				ns[op.Index] = nil // a cell made prose has no annotations
+			}
+			focus = op.Index
+		case "notes":
+			if !in || cells[op.Index].Kind != format.Code {
+				return Edited{}, fmt.Errorf("no code cell %d", op.Index)
+			}
+			ns[op.Index] = notes.Clean(op.Notes)
 			focus = op.Index
 		case "insert":
 			if op.Index < 0 || op.Index > n {
@@ -87,23 +101,31 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 				return Edited{}, err
 			}
 			cells = slices.Insert(cells, op.Index, c)
+			ns = slices.Insert(ns, op.Index, nil)
 			focus = op.Index
 		case "delete":
 			if !in {
 				return Edited{}, fmt.Errorf("no cell %d", op.Index)
 			}
 			cells = slices.Delete(cells, op.Index, op.Index+1)
+			ns = slices.Delete(ns, op.Index, op.Index+1)
 			focus = min(op.Index, len(cells)-1)
 		case "move":
 			if !in || op.To < 0 || op.To >= n {
 				return Edited{}, fmt.Errorf("cannot move cell %d to %d of %d", op.Index, op.To, n)
 			}
-			c := cells[op.Index]
+			c, nn := cells[op.Index], ns[op.Index]
 			cells = slices.Insert(slices.Delete(cells, op.Index, op.Index+1), op.To, c)
+			ns = slices.Insert(slices.Delete(ns, op.Index, op.Index+1), op.To, nn)
 			focus = op.To
 		default:
 			return Edited{}, fmt.Errorf("unknown edit %q", op.Op)
 		}
+	}
+	// The comments go back after their cells.
+	cells, keep := attach(cells, ns)
+	if focus >= 0 && focus < len(keep) {
+		focus = keep[focus]
 	}
 	// A prose cell followed by another cell ends its last line.
 	for i := range cells {
@@ -123,14 +145,22 @@ func Edit(markdown string, ops []Op) (Edited, error) {
 		return Edited{}, fmt.Errorf("the notebook would be %d bytes; the playground edits notebooks up to %d", len(out), MaxNotebook)
 	}
 	e := Edited{Markdown: out, Cells: Cells(out)}
-	for i, c := range format.Parse(out).Cells {
+	parsed := format.Parse(out).Cells
+	shown := 0 // the index among the cells the page shows, which have no comment-only prose
+	for i, c := range parsed {
+		if i > 0 && parsed[i-1].Kind == format.Code && c.Kind == format.Prose {
+			if _, rest, ok := notes.Split(c.Source); ok && rest == "" {
+				continue
+			}
+		}
 		start := c.Line
 		if c.Kind == format.Code {
 			start-- // its opening fence
 		}
 		if start <= line {
-			e.Focus = i
+			e.Focus = shown
 		}
+		shown++
 	}
 	return e, nil
 }

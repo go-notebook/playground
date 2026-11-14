@@ -5,7 +5,7 @@
 // defines globalThis.gonbEditor and calls gonbEditorReady() if the page defined
 // it:
 //
-//	const h = gonbEditor.create({text, lang, name, dark, onChange(text), onHeight(cssPx)})
+//	const h = gonbEditor.create({text, lang, name, dark, fontPx, notes, onChange(text), onHeight(cssPx), onNotes(notes)})
 //	h.mount(canvas)      // draw on this <canvas>; keyboard, IME, find and the AX tree follow
 //	h.resize()           // lay it out again at its canvas's CSS box (this surface only)
 //	h.unmount()          // free its frame; the text, caret and undo stay in h
@@ -14,6 +14,7 @@
 //	h.selection() -> [anchor, focus]   h.setSelection(anchor, focus)   (UTF-16 units)
 //	h.replay(b)          // pointer events in flight come from the mirror taking focus
 //	h.height()           // the CSS height the text wants
+//	h.notes() -> [{line, text}]   h.setNotes([{line, text}])   (line annotations, 1-based lines)
 //	h.destroy()
 //
 // What the editor does is in package editor, tested natively; this file only
@@ -28,6 +29,7 @@ import (
 	"github.com/go-widgets/webcanvas"
 
 	"github.com/go-notebook/playground/editor"
+	"github.com/go-notebook/playground/notes"
 )
 
 func main() {
@@ -51,6 +53,13 @@ func create(_ js.Value, args []js.Value) any {
 		return ""
 	}
 	cfg := editor.Config{Text: str("text"), Lang: str("lang"), Name: str("name"), Dark: o.Get("dark").Truthy()}
+	if v := o.Get("fontPx"); v.Type() == js.TypeNumber {
+		cfg.FontPx = v.Float()
+	}
+	cfg.Notes = notesFromJS(o.Get("notes"))
+	if f := o.Get("onNotes"); f.Type() == js.TypeFunction {
+		cfg.OnNotes = func(n []notes.Note) { f.Invoke(notesToJS(n)) }
+	}
 	if f := o.Get("onChange"); f.Type() == js.TypeFunction {
 		cfg.OnChange = func(t string) { f.Invoke(t) }
 	}
@@ -110,6 +119,8 @@ func create(_ js.Value, args []js.Value) any {
 	def("setSelection", func(a []js.Value) any { cell.SetSelection(a[0].Int(), a[1].Int()); return nil })
 	def("replay", func(a []js.Value) any { cell.ReplayPointer(a[0].Truthy()); return nil })
 	def("height", func([]js.Value) any { return cell.HeightCSS() })
+	def("notes", func([]js.Value) any { return notesToJS(cell.Notes()) })
+	def("setNotes", func(a []js.Value) any { cell.SetNotes(notesFromJS(a[0])); return nil })
 	def("focused", func([]js.Value) any { return cell.Focused() })
 	def("blur", func([]js.Value) any { cell.SetFocused(false); return nil })
 	def("destroy", func([]js.Value) any {
@@ -120,4 +131,31 @@ func create(_ js.Value, args []js.Value) any {
 		return nil
 	})
 	return h
+}
+
+// notesFromJS reads an array of {line, text}; anything else is no notes. The
+// page's values are untrusted: a bad element is skipped, and the cell bounds
+// the rest.
+func notesFromJS(v js.Value) []notes.Note {
+	if v.Type() != js.TypeObject || !js.Global().Get("Array").Call("isArray", v).Bool() {
+		return nil
+	}
+	var out []notes.Note
+	for i := 0; i < v.Length() && i < notes.MaxNotes*2; i++ {
+		e := v.Index(i)
+		if e.Type() != js.TypeObject || e.Get("line").Type() != js.TypeNumber || e.Get("text").Type() != js.TypeString {
+			continue
+		}
+		out = append(out, notes.Note{Line: e.Get("line").Int(), Text: e.Get("text").String()})
+	}
+	return out
+}
+
+// notesToJS is notes as an array of {line, text}.
+func notesToJS(ns []notes.Note) any {
+	arr := make([]any, 0, len(ns))
+	for _, n := range ns {
+		arr = append(arr, map[string]any{"line": n.Line, "text": n.Text})
+	}
+	return arr
 }

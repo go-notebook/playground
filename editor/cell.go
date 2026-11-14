@@ -15,16 +15,22 @@
 package editor
 
 import (
+	"math"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/go-opentype/fonts/gomono"
 	"github.com/go-widgets/painter"
 	"github.com/go-widgets/textinput"
 	"github.com/go-widgets/toolkit"
 	"github.com/go-widgets/toolkit/rougelex"
 	"github.com/go-widgets/webcanvas"
 	"github.com/go-widgets/window/webmirror"
+
+	"github.com/go-notebook/playground/notes"
 )
 
 // MaxText bounds the text one cell holds, in bytes. The page edits notebooks up
@@ -56,6 +62,12 @@ type Cell struct {
 	height   int     // preferred height, device pixels, as of the last report
 	hscale   float64 // the toolkit's metric scale when height was laid out
 
+	fontPx      float64 // the text size, CSS pixels
+	fontApplied int     // the pixel size of the font the editor has, 0 for none yet
+
+	lastNotes []notes.Note // the annotations OnNotes last heard
+	onNotes   func([]notes.Note)
+
 	request atomic.Pointer[func()]
 }
 
@@ -83,15 +95,41 @@ type Config struct {
 	// OnHeight hears the height the cell wants, in CSS pixels, when it changes:
 	// the page sets the canvas's CSS height from it.
 	OnHeight func(css float64)
+	// FontPx is the text size in CSS pixels; 0 is DefaultFontPx.
+	FontPx float64
+	// Notes are the cell's line annotations, 1-based lines of Text.
+	Notes []notes.Note
+	// OnNotes hears the annotations whenever they change (a comment added,
+	// edited or deleted, or its line moved by an edit).
+	OnNotes func([]notes.Note)
 }
+
+// DefaultFontPx is the text size of a cell, in CSS pixels: the size of a code
+// editor, where the toolkit's built-in 5x7 bitmap (about 8 CSS px) is a size for
+// chrome. A page that wants another says so in Config.FontPx.
+const DefaultFontPx = 13
+
+// MinFontPx and MaxFontPx bound Config.FontPx.
+const (
+	MinFontPx = 8
+	MaxFontPx = 32
+)
 
 // New is a Cell with cfg. A text over MaxText is cut on a rune boundary.
 func New(cfg Config) *Cell {
-	c := &Cell{onChange: cfg.OnChange, onHeight: cfg.OnHeight}
+	c := &Cell{onChange: cfg.OnChange, onHeight: cfg.OnHeight, onNotes: cfg.OnNotes}
+	c.fontPx = DefaultFontPx
+	if cfg.FontPx >= MinFontPx && cfg.FontPx <= MaxFontPx {
+		c.fontPx = cfg.FontPx
+	}
 	c.w, c.h = startW, startH
 	c.ed = toolkit.NewCodeEditor(Bound(cfg.Text))
 	c.ed.NoVerticalScroll = true
 	c.ed.ShowScrollbars = true // the horizontal one: no soft wrap yet
+	c.ed.ShowMinimap = true    // a whole-cell overview on the right, when the cell is wide enough
+	c.ed.MinimapWhenFixed = true
+	c.ed.EnableAnnotations(true)
+	c.syncFont()
 	c.ed.Syntax = rougelex.New()
 	c.ed.Language = cfg.Lang
 	c.ed.AccessibleName = cfg.Name
@@ -102,6 +140,8 @@ func New(cfg Config) *Cell {
 	c.ed.ScrollX().Set(0) // the scroll that put the old caret in view
 	c.SetDark(cfg.Dark)
 	c.last = c.ed.InputText()
+	c.SetNotes(cfg.Notes)
+	c.lastNotes = c.Notes()
 	c.height, c.hscale = c.ed.PreferredHeight().Get(), toolkit.MetricScale()
 	c.ed.PreferredHeight().Subscribe(func(int) { c.reportHeight() })
 	return c
@@ -195,6 +235,7 @@ func (c *Cell) reportHeight() {
 // changed tells the page the text, once per change. It runs after every input
 // the surface delivers, so a caret move reports nothing.
 func (c *Cell) changed() {
+	c.notesChanged()
 	t := c.ed.InputText()
 	if t == c.last {
 		return
@@ -220,6 +261,7 @@ func (c *Cell) Size() (int, int) { return c.w, c.h }
 func (c *Cell) Draw(buf []byte) {
 	p := painter.NewPixelPainter(buf, c.w, c.h)
 	full := toolkit.Rect{W: c.w, H: c.h}
+	c.syncFont() // the metric scale is global: another cell may have moved it
 	c.ed.SetBounds(full)
 	p.FillRect(full, c.theme.Background)
 	c.ed.Draw(p, c.theme)
@@ -227,6 +269,89 @@ func (c *Cell) Draw(buf []byte) {
 	// text-input client (the editor itself) and then asks for a frame: this is
 	// where a change that did not come through a Char or a KeyDown is heard.
 	c.changed()
+}
+
+// fontCache holds one font per pixel size, shared by every cell: parsing the
+// face is the cost, and the shaped runs it caches are the same for every cell.
+// A webcanvas scene draws on one thread, so the font itself is not shared
+// between goroutines; the mutex guards the map only.
+var (
+	fontMu    sync.Mutex
+	fontCache = map[int]toolkit.Font{}
+)
+
+// monoTTF is the face: Go Mono, embedded. A variable so that a test can break it.
+var monoTTF = gomono.TTF
+
+// monoFont is Go Mono at px device pixels (a nil font if the face cannot be
+// parsed, which the embedded one never fails to be).
+func monoFont(px int) toolkit.Font {
+	fontMu.Lock()
+	defer fontMu.Unlock()
+	if f, ok := fontCache[px]; ok {
+		return f
+	}
+	f, err := toolkit.NewTrueTypeFont(monoTTF, px)
+	if err != nil {
+		return nil
+	}
+	if len(fontCache) > 16 {
+		clear(fontCache)
+	}
+	fontCache[px] = f
+	return f
+}
+
+// syncFont gives the editor Go Mono at the size in CSS pixels times the
+// toolkit's metric scale (the device pixel ratio), so the glyphs are the same
+// size in CSS pixels on a plain and on a dense display. The toolkit's own
+// default, the 5x7 bitmap, is left to native apps.
+func (c *Cell) syncFont() {
+	px := int(math.Round(c.fontPx * toolkit.MetricScale()))
+	if px < 1 || px == c.fontApplied {
+		return
+	}
+	if f := monoFont(px); f != nil {
+		c.ed.SetFont(f)
+		c.fontApplied = px
+	}
+}
+
+// Notes are the cell's line annotations, 1-based lines, in line order.
+func (c *Cell) Notes() []notes.Note {
+	var out []notes.Note
+	l := c.ed.Annotations()
+	for i := 0; i < l.Len(); i++ {
+		a := l.At(i)
+		out = append(out, notes.Note{Line: a.Line + 1, Text: a.Text})
+	}
+	return notes.Clean(out)
+}
+
+// SetNotes replaces the annotations (the page loaded them); a note on a line the
+// text does not have is dropped. The change is not reported back.
+func (c *Cell) SetNotes(ns []notes.Note) {
+	l := c.ed.Annotations()
+	for l.Len() > 0 {
+		l.RemoveAt(l.Len() - 1)
+	}
+	for _, n := range notes.Clean(ns) {
+		c.ed.SetAnnotation(n.Line-1, n.Text)
+	}
+	c.lastNotes = c.Notes()
+	c.repaint()
+}
+
+// notesChanged tells the page the annotations, once per change.
+func (c *Cell) notesChanged() {
+	n := c.Notes()
+	if slices.Equal(n, c.lastNotes) {
+		return
+	}
+	c.lastNotes = n
+	if c.onNotes != nil {
+		c.onNotes(n)
+	}
 }
 
 // Insert replaces the selection with s, as a paste does (the Tab key, which
@@ -363,6 +488,7 @@ func (c *Cell) Resize(w, h int) (int, int) {
 // whichever cell set the scale, and whenever.
 func (c *Cell) SetPixelRatio(r float64) {
 	toolkit.SetMetricScale(r)
+	c.syncFont()
 	c.repaint()
 }
 

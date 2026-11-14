@@ -9,12 +9,13 @@ require (
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
+	github.com/go-opentype/fonts v0.14.0
 	github.com/go-plot/plot v0.1.1
 	github.com/go-scikit/ruby v0.2.1
 	github.com/go-statistics/stats v0.1.0
 	github.com/go-widgets/painter v0.17.0
 	github.com/go-widgets/textinput v0.1.1
-	github.com/go-widgets/toolkit v0.374.3
+	github.com/go-widgets/toolkit v0.375.0
 	github.com/go-widgets/toolkit/rougelex v0.2.0
 	github.com/go-widgets/webcanvas v0.14.3
 	github.com/go-widgets/window v0.93.0
@@ -122,7 +123,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-mustache/mustache v0.1.0 // indirect
 	github.com/go-nokogiri/nokogiri v0.1.0 // indirect
-	github.com/go-opentype/fonts v0.14.0 // indirect
 	github.com/go-opentype/opentype v0.18.0 // indirect
 	github.com/go-opentype/shape v0.7.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect

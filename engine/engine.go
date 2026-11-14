@@ -35,6 +35,7 @@ import (
 	"github.com/go-notebook/notebook/analysis"
 	"github.com/go-notebook/notebook/format"
 	"github.com/go-notebook/playground/internal/yaegi/interp"
+	"github.com/go-notebook/playground/notes"
 
 	"github.com/go-notebook/playground/symbols"
 )
@@ -84,17 +85,24 @@ type Cell struct {
 	Lang string `json:"lang,omitempty"`
 	// Source is the cell's text, without the fences of a code cell.
 	Source string `json:"source"`
+	// Notes are a code cell's line annotations (see package notes), read from the
+	// comment that follows its fence, which the Source of the prose cell after it
+	// no longer shows.
+	Notes []notes.Note `json:"notes,omitempty"`
 }
 
-// Cells splits a notebook into its cells, as go-notebook does.
+// Cells splits a notebook into its cells, as go-notebook does. The annotation
+// comment of a code cell is taken out of the prose after it and given to the
+// cell as Notes; the cells are otherwise one for one with format.Parse's.
 func Cells(markdown string) []Cell {
 	var out []Cell
-	for _, c := range format.Parse(markdown).Cells {
+	cells, ns := detach(format.Parse(markdown).Cells)
+	for i, c := range cells {
 		k := "prose"
 		if c.Kind == format.Code {
 			k = "code"
 		}
-		out = append(out, Cell{Kind: k, Lang: c.Lang, Source: c.Source})
+		out = append(out, Cell{Kind: k, Lang: c.Lang, Source: c.Source, Notes: ns[i]})
 	}
 	return out
 }
