@@ -206,8 +206,8 @@ github.com/go-datetime/dates v0.2.0 h1:5zXrMqTgw3ljlQfghRsdJRtXYqnR6jYqTgMvA3kG8
 github.com/go-datetime/dates v0.2.0/go.mod h1:FmzSHylloy714Cc8MEkRjREYP7TcslqjmzsFMQXglAg=
 github.com/go-embedded-c/c v0.2.1 h1:LCNcLHJ1T3Ry0adJwO+jK9RnoFwrMd6yR/0bb0muHIc=
 github.com/go-embedded-c/c v0.2.1/go.mod h1:MhuXRqUtTZTUnm/3fVjho1HiL6QCFylChzOQ+Tu9eiQ=
-github.com/go-embedded-fortran/fortran v0.24.1 h1:hp0Rx5xhoLhNXVsVRmI/B3QdKz+Stxseklb9B5TX3Ro=
-github.com/go-embedded-fortran/fortran v0.24.1/go.mod h1:UUtUFdyuO7fWnDoBjbjGZNGXg7bH2fW2DLp1D4QOAkg=
+github.com/go-embedded-fortran/fortran v0.27.0 h1:ZaTuufBUCmf13EwYc58fCG+iYD7Il88kNNTiqb69Zxo=
+github.com/go-embedded-fortran/fortran v0.27.0/go.mod h1:UUtUFdyuO7fWnDoBjbjGZNGXg7bH2fW2DLp1D4QOAkg=
 github.com/go-embedded-julia/julia v0.17.0 h1:lCsAJ6bsvfqC1OGM3d5LUGbZlpdvDq+MoXFv/Bo+VVo=
 github.com/go-embedded-julia/julia v0.17.0/go.mod h1:WkSyHRvyKTls2QhqjwORXAcDOJCeoO6zIx2wedBPLpk=
 github.com/go-embedded-r/r v0.17.1 h1:raX7Ac9Bvni/pw+A+7lWFO1UkJqm66d4f26uh57DH2w=

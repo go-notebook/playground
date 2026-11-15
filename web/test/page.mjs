@@ -525,6 +525,8 @@ async function fortranLimitChecks() {
     ['memory bomb, 100000 objects with a 64000-byte array component', '```fortran\ntype :: t\nreal(8) :: x(8000)\nend type\ntype(t) :: a(100000)\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
     ['memory bomb, objects with a 1 MiB character component', '```fortran\ntype :: u\ncharacter(len=1048576) :: c\nend type\ntype(u) :: a(2000)\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
     ['memory bomb, two 2^25 arrays are 512 MiB together', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**25))\nallocate(b(2**25))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+    // an array constructor's elements are charged as it grows (fortran v0.24.2)
+    ['memory bomb, a 2 GiB array constructor', '```fortran\ninteger :: b(1000000), j\ninteger, allocatable :: c(:)\nb = 1\nc = [(b, j = 1, 268)]\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
     ['deep recursion, infinite', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
     ['deep recursion, 150 deep still runs', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(150)\n```\n', /^150$/, 1, true],
     ['memory bomb, two 2^27 arrays', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**27))\nallocate(b(2**27))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
