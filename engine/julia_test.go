@@ -5,6 +5,8 @@ package engine
 import (
 	"strings"
 	"testing"
+
+	"github.com/go-notebook/notebook/analysis"
 )
 
 // A Julia cell is checked, never run, whatever go-notebook's registry says
@@ -37,6 +39,39 @@ func TestJuliaCells(t *testing.T) {
 	}
 	if !JuliaSupported {
 		t.Error("JuliaSupported")
+	}
+}
+
+// runsJulia is go-notebook's Julia as the release that runs it registers it:
+// the same language, whose Run says Runs. go.mod may pin a release in which it
+// does not, so the test makes it so.
+type runsJulia struct{ analysis.Language }
+
+func (runsJulia) Run() analysis.Run { return analysis.Run{Runs: true} }
+
+// Whatever the registry says about Julia, a Julia cell never reaches the Go
+// evaluator (it would fail there as Go source). With the language clause of
+// CheckOnly deleted this fails on any go-notebook release.
+func TestJuliaNeverReachesGoWhenRegisteredAsRunning(t *testing.T) {
+	orig := analysis.Lookup(analysis.Julia)
+	analysis.Unregister(analysis.Julia)
+	analysis.Register(runsJulia{orig})
+	t.Cleanup(func() {
+		analysis.Unregister(analysis.Julia)
+		analysis.Register(orig)
+	})
+	if !analysis.RunOf(analysis.Julia).Runs {
+		t.Fatal("the stub does not run")
+	}
+	res := Run("```go\nn := 2\n```\n```julia\nprintln(\"hi\")\nxs = [i^2 for i in 1:3]\n```\n```go\nn * 21\n```\n")
+	if res[1].Error != JuliaNotRun || res[1].Status != StatusNotRun || res[1].Output != "" || len(res[1].Display) != 0 {
+		t.Errorf("the Julia cell: %+v", res[1])
+	}
+	if res[2].Error != "" || res[2].Skipped || res[2].Display[0]["text/plain"] != "42" {
+		t.Errorf("the Go cell after it: %+v", res[2])
+	}
+	if !CheckOnly(analysis.Julia) {
+		t.Error("CheckOnly(julia)")
 	}
 }
 
