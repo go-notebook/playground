@@ -10,13 +10,15 @@
 // so that the version it builds is the one go.mod pins. Before writing
 // anything it runs every notebook, natively, with the same engine the page
 // runs in WebAssembly, and fails if a cell fails: a site never publishes an
-// example that does not run. A Julia cell is checked, never run, so a Julia
-// cell that parses is not a failure, nor is a cell that reads its variables
-// (blocked); a syntax error in a Julia cell is.
+// example that does not run. Julia cells run too (the first run fetches the
+// pinned Base image into the user's cache directory); a cell of a language that
+// is only checked (C) that parses is not a failure, nor is a cell that reads
+// its variables (blocked); a syntax error or an exception in a cell is.
 package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -255,6 +257,19 @@ func build(c config) error {
 		"build", "-trimpath", "-tags=ruby,rbgo_core", "-ldflags=-s -w", "-o", rubyWasm, corePkg); err != nil {
 		return fmt.Errorf("building the Ruby WebAssembly core: %w", err)
 	}
+	// The core with Julia cells, the second one and go-embedded-julia's
+	// interpreter on top (about 20 MB more), and the Base image it boots from,
+	// compressed: the page loads both only when a Julia cell is run, never with
+	// the other cores. The two before it are built without the tag, and do not grow.
+	juliaWasm := filepath.Join(c.out, "playground-julia.wasm")
+	if _, err := goCmd([]string{"GOOS=js", "GOARCH=wasm", "GOWORK=off"},
+		"build", "-trimpath", "-tags=ruby,rbgo_core,julia", "-ldflags=-s -w", "-o", juliaWasm, corePkg); err != nil {
+		return fmt.Errorf("building the Julia WebAssembly core: %w", err)
+	}
+	image, err := writeJuliaImage(c.out)
+	if err != nil {
+		return err
+	}
 	// The code editor, which the page loads after it is usable as it is: a
 	// failed load leaves the <textarea> page.
 	editorWasm := filepath.Join(c.out, "editor.wasm")
@@ -278,7 +293,7 @@ func build(c config) error {
 	// same core, so the worker may use a copy the browser holds whatever its
 	// age (see web/worker.js), and a new build is a new URL.
 	cores, sizes := map[string]string{}, map[string]int64{}
-	for _, core := range []struct{ key, path string }{{"go", wasm}, {"ruby", rubyWasm}} { // in this order: a map would fail in any
+	for _, core := range []struct{ key, path string }{{"go", wasm}, {"ruby", rubyWasm}, {"julia", juliaWasm}} { // in this order: a map would fail in any
 		u, size, err := coreURL(core.path)
 		if err != nil {
 			return err
@@ -291,6 +306,8 @@ func build(c config) error {
 		return err
 	}
 	editorJSON, _ := json.Marshal(map[string]any{"url": editorURL, "size": editorSize})
+	image.CoreSize = sizes["julia"]
+	juliaJSON, _ := json.Marshal(image)
 
 	// The page.
 	for _, name := range []string{"playground.css", "playground.js", "worker.js"} {
@@ -321,6 +338,7 @@ func build(c config) error {
 		"Examples":    string(data),
 		"Cores":       string(coresJSON),
 		"Editor":      string(editorJSON),
+		"Julia":       string(juliaJSON),
 		"Languages":   string(langsJSON),
 		"Carousel":    string(car), // html/template's output
 	})
@@ -328,9 +346,50 @@ func build(c config) error {
 		return err
 	}
 
-	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB, editor.wasm %.1f MB\n",
-		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6, float64(editorSize)/1e6)
+	fmt.Fprintf(c.stdout, "wrote %s: %d notebooks, playground.wasm %.1f MB, playground-ruby.wasm %.1f MB, playground-julia.wasm %.1f MB with its image %.1f MB compressed, editor.wasm %.1f MB\n",
+		c.out, len(exs), float64(sizes["go"])/1e6, float64(sizes["ruby"])/1e6, float64(sizes["julia"])/1e6, float64(image.Size)/1e6, float64(editorSize)/1e6)
 	return nil
+}
+
+// juliaAsset is the Base image as the page asks for it: the compressed copy
+// cmd/build writes, whose name carries the release and the start of the pinned
+// digest (so a URL is always the same bytes), its size compressed and as the
+// kernel decodes it, the whole digest the kernel checks (engine.JuliaImageDigest),
+// and the size of the third core, which the page shows before it downloads.
+type juliaAsset struct {
+	URL      string `json:"url"`
+	Size     int64  `json:"size"`
+	RawSize  int    `json:"rawSize"`
+	Digest   string `json:"digest"`
+	CoreSize int64  `json:"coreSize"`
+}
+
+// juliaImage is the verified image: engine.JuliaImage fetches it by its pinned
+// digest (interp.FetchImage keeps it in the user's cache directory, hashed again
+// each time, and returns nothing that does not have that digest). A seam for
+// the tests that build with a fake go command.
+var juliaImage = engine.JuliaImage
+
+// writeJuliaImage writes the image gzipped, the compression a browser reads
+// without a library (DecompressionStream) and a static host serves as it is.
+func writeJuliaImage(out string) (juliaAsset, error) {
+	img, err := juliaImage()
+	if err != nil {
+		return juliaAsset{}, fmt.Errorf("the Julia image: %w", err)
+	}
+	var buf bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression) // a valid level
+	if _, err := zw.Write(img); err != nil {
+		return juliaAsset{}, err
+	}
+	if err := zw.Close(); err != nil {
+		return juliaAsset{}, err
+	}
+	name := fmt.Sprintf("julia-image-%s-%s.bin.gz", engine.JuliaImageVersion, engine.JuliaImageDigest[:8])
+	if err := os.WriteFile(filepath.Join(out, name), buf.Bytes(), 0o644); err != nil {
+		return juliaAsset{}, err
+	}
+	return juliaAsset{URL: name, Size: int64(buf.Len()), RawSize: len(img), Digest: engine.JuliaImageDigest}, nil
 }
 
 // language is a cell language as the page offers it: its fence word, the
@@ -345,14 +404,18 @@ type language struct {
 
 // languages are the languages go-notebook registers (analysis.Languages), so
 // that a language added there reaches the badges and the + menu without an
-// edit here. The default core holds Go only; every other language rides the
+// edit here. The default core holds Go only; Julia rides the third core, which
+// the page loads when a Julia cell is run; every other language rides the
 // second core, built with its runtime and its parser (see build).
 func languages() []language {
 	var out []language
 	for _, name := range analysis.Languages() {
 		core := "ruby"
-		if name == analysis.Go {
+		switch name {
+		case analysis.Go:
 			core = "go"
+		case analysis.Julia:
+			core = "julia" // the third core, loaded when a Julia cell is run
 		}
 		out = append(out, language{Name: name, Label: label(name), Runs: !engine.CheckOnly(name), Core: core})
 	}
@@ -381,8 +444,8 @@ func label(name string) string {
 
 // cellFailed reports whether a cell of the language lang failed. Two outcomes
 // are not failures, by their typed status and not by their text: a cell of a
-// language that is checked and not run by design (Julia, until
-// go-embedded-julia has a runtime), and a cell of a language that runs that
+// language that is checked and not run by design (C, until go-embedded-c
+// generates code), and a cell of a language that runs that
 // reads what one defines. Each is accepted only where it can happen: anything
 // else with an error, a syntax error in a checked cell included, fails the
 // build.

@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -40,6 +44,14 @@ func fakeGo(goroot string) func([]string, ...string) ([]byte, error) {
 		}
 		return []byte(goroot + "\n"), nil
 	}
+}
+
+// fakeImage stands for the Julia image, which a real build fetches (25 MB, kept
+// in the user's cache directory) and compresses; the tests that build with a
+// fake go command do not need the real one.
+func fakeImage(t *testing.T) {
+	t.Helper()
+	seam(t, &juliaImage, func() ([]byte, error) { return []byte("a small image"), nil })
 }
 
 // fakeRoot is a GOROOT holding lib/wasm/wasm_exec.js.
@@ -100,6 +112,11 @@ func TestBuild(t *testing.T) {
 		"--accent: #9e520f;",
 		`"name":"1-fit-and-test","title":"Fit a distribution, then test the fit"`,
 		`"kind":"code","lang":"go","source":"import (`,
+		// the third core, and the compressed image it boots from: the name carries
+		// the release and the start of the pinned digest
+		`"julia":"playground-julia.wasm?v=`,
+		`<script id="julia-data" type="application/json">{"url":"julia-image-` + engine.JuliaImageVersion + `-` + engine.JuliaImageDigest[:8] + `.bin.gz",`,
+		`"rawSize":25638782,"digest":"` + engine.JuliaImageDigest + `","coreSize":`,
 		// the loading carousel, before playground.js, which drives it
 		`<div id="loading"><style>`,
 		`aria-roledescription="carousel" aria-label="What go-notebook does"`,
@@ -121,8 +138,28 @@ func TestBuild(t *testing.T) {
 	}
 	// the carousel's script, the notebooks' data, the cores' URLs, the
 	// languages and playground.js
-	if bytes.Count(page, []byte("</script>")) != 6 {
+	if bytes.Count(page, []byte("</script>")) != 7 {
 		t.Error("a notebook closed a <script> early")
+	}
+	// the image is a real gzip of the pinned one, and the page's core a real
+	// third core beside the other two
+	gz, err := os.ReadFile(filepath.Join(out, "julia-image-"+engine.JuliaImageVersion+"-"+engine.JuliaImageDigest[:8]+".bin.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum := sha256.Sum256(raw); fmt.Sprintf("%x", sum) != engine.JuliaImageDigest || len(raw) != engine.JuliaImageSize {
+		t.Errorf("the compressed image is not the pinned one: %d bytes, %x", len(raw), sum)
+	}
+	if _, err := os.Stat(filepath.Join(out, "playground-julia.wasm")); err != nil {
+		t.Error(err)
 	}
 	if !strings.Contains(log.String(), "5 notebooks, playground.wasm") {
 		t.Errorf("log: %s", log)
@@ -170,10 +207,12 @@ func TestFailingNotebook(t *testing.T) {
 	}
 }
 
-// A Julia cell is checked and never run, which is not a failure; a mistake in
-// one is, and so is every real failure in the other languages.
+// A Julia cell runs, here as in the page: the example publishes, and a mistake
+// or an exception in a Julia cell fails the build, as does every real failure in
+// the other languages.
 func TestJuliaNotebooks(t *testing.T) {
 	log := quiet(t)
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	dir := t.TempDir()
 	write := func(name, src string) string {
@@ -186,10 +225,13 @@ func TestJuliaNotebooks(t *testing.T) {
 	for _, tc := range []struct {
 		name, src, err, log string
 	}{
-		// The shipped example: a Julia cell, a Go cell blocked on it and a
-		// Go cell that runs alone.
+		// The shipped example: Julia cells that run, and Go cells beside them.
 		{name: "example", src: mustRead(t, "../../examples/notebook/4-julia.md")},
-		{name: "ok", src: "```go\nn := 1\n```\n```julia\ntotal = n + 1\n```\n```go\nm := n\n```\n```go\nn * 2\n```\n"},
+		{name: "ok", src: "```go\nn := 1\n```\n```julia\ntotal = 1 + 1\n```\n```go\nm := n\n```\n```go\nn * 2\n```\n"},
+		// An exception in a Julia cell fails, with Julia's own text; so does a
+		// Julia cell that reads a Go variable (Julia variables stay in Julia).
+		{name: "exception", src: "```julia\nsqrt(-1)\n```\n", err: "exception.md does not run", log: "ERROR: DomainError with -1.0:"},
+		{name: "cross", src: "```go\nn := 1\n```\n```julia\nn + 1\n```\n", err: "cross.md does not run", log: "UndefVarError"},
 		// A syntax error in a Julia cell, at its line and column, fails.
 		{name: "syntax", src: "```julia\ny = 2\nx = (1,\n```\n", err: "syntax.md does not run", log: "syntax.md:2: cell 0 failed:\nline 2:8: syntax error"},
 		// A real failure in Go, with or without Julia in the notebook.
@@ -227,8 +269,8 @@ func mustRead(t *testing.T, path string) string {
 	return string(b)
 }
 
-// failed accepts a Julia cell's not-run outcome only for a Julia cell, and
-// the blocked outcome only for another language's cell.
+// failed accepts the not-run outcome only for a cell of a check-only language
+// (C), and the blocked outcome only for a cell of a language that runs.
 func TestFailed(t *testing.T) {
 	for _, tc := range []struct {
 		r    engine.Result
@@ -238,12 +280,12 @@ func TestFailed(t *testing.T) {
 		{engine.Result{}, "go", false},
 		{engine.Result{Error: "boom"}, "go", true},
 		{engine.Result{Error: "boom"}, "julia", true},
-		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "julia", false},
+		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "julia", true}, // Julia runs
 		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "go", true},
 		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "ruby", true},
 		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "go", false},
 		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "ruby", false},
-		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "julia", true},
+		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "julia", false},
 		{engine.Result{Error: "x", Status: "other"}, "go", true},
 		{engine.Result{Error: "x", Status: engine.StatusNotRun}, "c", false},
 		{engine.Result{Error: "x", Status: engine.StatusBlocked}, "c", true},
@@ -256,15 +298,15 @@ func TestFailed(t *testing.T) {
 }
 
 // The page offers go-notebook's registered languages: Go first, then those
-// that run, then those only checked.
+// that run, then those only checked. Julia runs, in the third core.
 func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
 	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
 		`{"name":"fortran","label":"Fortran","runs":true,"core":"ruby"},` +
+		`{"name":"julia","label":"Julia","runs":true,"core":"julia"},` +
 		`{"name":"r","label":"R","runs":true,"core":"ruby"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
-		`{"name":"c","label":"C","runs":false,"core":"ruby"},` +
-		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
+		`{"name":"c","label":"C","runs":false,"core":"ruby"}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)
 	}
@@ -300,8 +342,57 @@ func TestRegisteredLanguage(t *testing.T) {
 	}
 }
 
+// The Julia image is written gzipped under a name that carries the release and the
+// start of the pinned digest, and the page is told its sizes; an image that
+// cannot be had fails the build, and so does a Julia core that does not build.
+func TestJuliaImageAsset(t *testing.T) {
+	img := bytes.Repeat([]byte("a julia image "), 1000)
+	seam(t, &juliaImage, func() ([]byte, error) { return img, nil })
+	out := t.TempDir()
+	a, err := writeJuliaImage(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "julia-image-" + engine.JuliaImageVersion + "-" + engine.JuliaImageDigest[:8] + ".bin.gz"; a.URL != want {
+		t.Errorf("url %q, want %q", a.URL, want)
+	}
+	gz, err := os.ReadFile(filepath.Join(out, a.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, _ := io.ReadAll(zr)
+	if !bytes.Equal(back, img) || a.RawSize != len(img) || a.Size != int64(len(gz)) || a.Size >= int64(len(img)) || a.Digest != engine.JuliaImageDigest {
+		t.Errorf("asset %+v for %d bytes, %d on disk", a, len(img), len(gz))
+	}
+	if sum := sha256.Sum256(back); len(fmt.Sprintf("%x", sum)) != 64 {
+		t.Error("digest")
+	}
+	// the same bytes are the same file: a URL names its bytes
+	b, _ := writeJuliaImage(t.TempDir())
+	if b != a {
+		t.Errorf("a second build: %+v against %+v", b, a)
+	}
+	seam(t, &juliaImage, func() ([]byte, error) { return nil, errors.New("no network") })
+	if _, err := writeJuliaImage(out); err == nil || !strings.Contains(err.Error(), "the Julia image: no network") {
+		t.Errorf("an image that cannot be had: %v", err)
+	}
+	seam(t, &juliaImage, func() ([]byte, error) { return img, nil })
+	blocked := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(blocked, a.URL), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeJuliaImage(blocked); err == nil {
+		t.Error("an image written where a directory is did not fail")
+	}
+}
+
 func TestWriteErrors(t *testing.T) {
 	log := quiet(t)
+	fakeImage(t)
 	defer func(f func([]string, ...string) ([]byte, error)) { goCmd = f }(goCmd)
 	root := fakeRoot(t)
 	nb := examples(t)[1] // 2-t-test: no figure, quick
@@ -338,6 +429,18 @@ func TestWriteErrors(t *testing.T) {
 			}
 			return fakeGo(root)(env, args...)
 		}, err: "playground-ruby.wasm"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, "-tags=ruby,rbgo_core,julia") {
+				return nil, errors.New("no julia")
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "building the Julia WebAssembly core: no julia"},
+		{gocmd: func(env []string, args ...string) ([]byte, error) {
+			if slices.Contains(args, "-tags=ruby,rbgo_core,julia") {
+				return nil, nil // built nothing
+			}
+			return fakeGo(root)(env, args...)
+		}, err: "playground-julia.wasm"},
 		{gocmd: func(env []string, args ...string) ([]byte, error) {
 			if slices.Contains(args, editorPkg) {
 				return nil, errors.New("no editor")
@@ -399,6 +502,7 @@ func TestMainExit(t *testing.T) {
 	if code != 1 || !strings.Contains(string(got), "build: no notebooks") {
 		t.Errorf("exit %d, stderr %q", code, got)
 	}
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	code = -1
 	os.Args = []string{"build", "-o", t.TempDir(), examples(t)[1]}
@@ -420,6 +524,7 @@ func TestExitStatuses(t *testing.T) {
 	defer devnull.Close()
 	os.Stderr = devnull
 	defer func() { os.Stderr = oe }()
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	for _, tc := range []struct {
 		args []string
@@ -557,6 +662,7 @@ func TestLegacyFindError(t *testing.T) {
 // The old spellings still build, with a note.
 func TestLegacyEndToEnd(t *testing.T) {
 	log := quiet(t)
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	out := t.TempDir()
 	if err := runTo(log, "-o", out, "-org", "legacy-org", "-accent", "#123", "-accent-dark=#456", examples(t)[1]); err != nil {
