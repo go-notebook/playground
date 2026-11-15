@@ -961,7 +961,7 @@ async function juliaChecks(name) {
     // (an empty `while true` is stopped by whichever bound it reaches first: its
     // 20 million statements come up in about 9 s here, the 10 s next to it; a
     // sleep has no statements to count, so it is the timeout alone)
-    const bounds = /^stopped: the Julia cell (ran longer than 10s|executed more than 20000000 statements), the limit$/;
+    const bounds = /^stopped: the Julia cell (ran longer than 20s|executed more than 20000000 statements), the limit$/;
     cells = await run('while true\nend', '```julia\n1 + 1\n```\n');
     console.log(`Julia spinning cell (${Date.now() - ts} ms): ` + JSON.stringify(cells[0].out));
     if (!bounds.test(cells[0].out)) fail('a spinning Julia cell: ' + JSON.stringify(cells));
@@ -969,8 +969,8 @@ async function juliaChecks(name) {
     cells = await run('sleep(60)', '```julia\n1 + 1\n```\n');
     const spun = Date.now() - ts2;
     console.log(`Julia sleeping cell (${spun} ms): ` + JSON.stringify(cells[0].out));
-    if (cells[0].out !== 'stopped: the Julia cell ran longer than 10s, the limit' || /worker was killed/.test(cells[0].out)) fail('a sleeping Julia cell is not stopped by the kernel\'s timeout: ' + JSON.stringify(cells));
-    if (spun > 30000) fail(`the sleeping cell took ${spun} ms: the kernel's 10 s did not end it`);
+    if (cells[0].out !== 'stopped: the Julia cell ran longer than 20s, the limit' || /worker was killed/.test(cells[0].out)) fail('a sleeping Julia cell is not stopped by the kernel\'s timeout: ' + JSON.stringify(cells));
+    if (spun > 60000) fail(`the sleeping cell took ${spun} ms: the kernel's 20 s did not end it`);
     if (!/Not run: a cell above failed/.test(cells[1].out)) fail('the cell after the stopped one should be skipped: ' + JSON.stringify(cells));
     if ((await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('a spinning Julia cell restarted the core');
     cells = await run('6 * 7');

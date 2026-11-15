@@ -19,7 +19,7 @@
   // the seconds to download them on a fast link, decode the image and boot the
   // kernel.
   const JULIA_DOWNLOAD_MB = 28;
-  const JULIA_LOAD_S = 16;
+  const JULIA_LOAD_S = 20;
   const article = $('notebook');
   const status = $('status');
   const runButton = $('run');

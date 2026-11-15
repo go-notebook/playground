@@ -168,15 +168,16 @@ func TestJuliaLimits(t *testing.T) {
 	}
 }
 
-// The page's limits are R's where R has them: 512 MiB, 20 million steps, 10 s.
+// The page's limits are R's (512 MiB, 20 million steps) but for the time: 20 s,
+// under the page's 30 s watchdog (see JuliaLimits).
 func TestJuliaLimitsAreThePages(t *testing.T) {
 	saved := JuliaLimits
 	t.Cleanup(func() { JuliaLimits = saved })
 	JuliaLimits = pageLimits
-	if JuliaLimits.MaxAlloc != RLimits.MaxAlloc || JuliaLimits.MaxSteps != int64(RLimits.MaxSteps) || JuliaLimits.Timeout != RLimits.Timeout {
+	if JuliaLimits.MaxAlloc != RLimits.MaxAlloc || JuliaLimits.MaxSteps != int64(RLimits.MaxSteps) || JuliaLimits.Timeout != 2*RLimits.Timeout {
 		t.Errorf("%+v against R's %+v", JuliaLimits, RLimits)
 	}
-	if o := juliaOptions(); o.MaxAlloc != 32<<20 || o.Timeout != 10*time.Second || o.MaxSteps != 20_000_000 || o.MaxOutput != 16<<20 {
+	if o := juliaOptions(); o.MaxAlloc != 32<<20 || o.Timeout != 20*time.Second || o.MaxSteps != 20_000_000 || o.MaxOutput != 16<<20 {
 		t.Errorf("%+v", o)
 	}
 }
@@ -302,7 +303,7 @@ func TestJuliaFailures(t *testing.T) {
 		want string
 	}{
 		{fmt.Errorf("%w (x)", interp.ErrCellCanceled), "stopped: the Julia cell was cancelled"},
-		{interp.ErrCellTimeout, "stopped: the Julia cell ran longer than 10s, the limit"},
+		{interp.ErrCellTimeout, "stopped: the Julia cell ran longer than 20s, the limit"},
 		{errors.New("boom"), "the Julia cell failed: boom"},
 		{&interp.JuliaError{Message: "m"}, "ERROR: m"},
 	} {

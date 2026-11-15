@@ -2,7 +2,7 @@
 
 A cell written in a `julia` fence **runs** here, on [go-embedded-julia](https://go-embedded-julia.github.io/)'s interpreter, in WebAssembly in this tab. There is no external `julia` and no server behind it. It is the same interpreter that `notebook run` and `notebook serve` use.
 
-Julia is the heaviest runtime the page has, so it is loaded **only when you run a Julia cell**: Run loads a third core and Julia's Base image (about 28 MB over the wire, about 16 seconds the first time, then your browser keeps them), and says so on the cell while it does. Opening this notebook, and running the Go cells above the first Julia cell, download nothing for Julia. The Go, Ruby, R and Fortran cores never carry it.
+Julia is the heaviest runtime the page has, so it is loaded **only when you run a Julia cell**: Run loads a third core and Julia's Base image (about 28 MB over the wire, about 20 seconds the first time, then your browser keeps them), and says so on the cell while it does. Opening this notebook, and running the Go cells above the first Julia cell, download nothing for Julia. The Go, Ruby, R and Fortran cores never carry it.
 
 ```go
 n := 10
@@ -38,6 +38,6 @@ n * 2
 
 A mistake in a Julia cell is caught at its line and column before anything runs, and an exception shows Julia's own text. Add a Julia cell with `x = (1,` and run the notebook to see ``line 1:8: syntax error: Expected `)` or `,` ``, or one with `sqrt(-1)` to see `ERROR: DomainError with -1.0:`. The cells after a failed cell are not run, as in every language.
 
-A cell is bounded like an R cell: 512 MiB of arrays, 20 million statements, 10 seconds and a cap on its output. A cell that spins ends with `stopped: the Julia cell ran longer than 10s, the limit`, and the kernel, with its variables, is kept. Each run starts a kernel of its own, so a `struct` defined by a cell is not a redefinition the second time you run the notebook.
+A cell is bounded like an R cell: 512 MiB of arrays, 20 million statements, 20 seconds and a cap on its output. A cell that sleeps or spins ends with `stopped: the Julia cell ran longer than 20s, the limit`, and the kernel, with its variables, is kept. Each run starts a kernel of its own, so a `struct` defined by a cell is not a redefinition the second time you run the notebook.
 
 If Julia cannot start (the network, or a tab out of memory), its cells say so and the cells of the other languages run as usual.

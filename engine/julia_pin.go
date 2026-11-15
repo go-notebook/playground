@@ -28,9 +28,11 @@ const (
 //     have more than 2^24 elements whatever the limit;
 //   - MaxSteps 20 million statements: a runaway loop ends on the count, the same
 //     on every machine, in a few seconds;
-//   - Timeout 10 s, under the page's watchdog (CELL_LIMIT_S, 30 s unless the
+//   - Timeout 20 s, under the page's watchdog (CELL_LIMIT_S, 30 s unless the
 //     page says otherwise), so that the cell is stopped with Julia's own message
-//     and its kernel kept, before the worker has to be killed;
+//     and its kernel kept, before the worker has to be killed. R's is 10 s; a
+//     Julia cell compiles what it uses the first time it uses it, and an
+//     ordinary cell (a comprehension, a print) took over 10 s on a CI runner;
 //   - MaxOutput 16 MiB to each of standard output and error, the rest dropped,
 //     and the cell says so.
 //
@@ -40,4 +42,4 @@ var JuliaLimits = struct {
 	MaxSteps  int64
 	Timeout   time.Duration
 	MaxOutput int
-}{MaxAlloc: 512 << 20, MaxSteps: 20_000_000, Timeout: 10 * time.Second, MaxOutput: 16 << 20}
+}{MaxAlloc: 512 << 20, MaxSteps: 20_000_000, Timeout: 20 * time.Second, MaxOutput: 16 << 20}
