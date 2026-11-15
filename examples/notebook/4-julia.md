@@ -2,7 +2,7 @@
 
 A cell written in a `julia` fence **runs** here, on [go-embedded-julia](https://go-embedded-julia.github.io/)'s interpreter, in WebAssembly in this tab. There is no external `julia` and no server behind it. It is the same interpreter that `notebook run` and `notebook serve` use.
 
-Julia is the heaviest runtime the page has, so it is loaded **only when you run a Julia cell**: Run loads a third core and Julia's Base image (about 28 MB over the wire, a dozen seconds the first time, then your browser keeps them), and says so on the cell while it does. Opening this notebook, and running the Go cells above the first Julia cell, download nothing for Julia. The Go, Ruby, R and Fortran cores never carry it.
+Julia is the heaviest runtime the page has, so it is loaded **only when you run a Julia cell**: Run loads a third core and Julia's Base image (about 28 MB over the wire, about 16 seconds the first time, then your browser keeps them), and says so on the cell while it does. Opening this notebook, and running the Go cells above the first Julia cell, download nothing for Julia. The Go, Ruby, R and Fortran cores never carry it.
 
 ```go
 n := 10

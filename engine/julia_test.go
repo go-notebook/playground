@@ -1,10 +1,13 @@
-//go:build (js && ruby) || !(js || wasip1 || plan9)
+//go:build !(js || wasip1 || plan9)
 
 package engine
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +15,22 @@ import (
 	"github.com/go-notebook/notebook/analysis"
 	"github.com/go-notebook/notebook/jcells"
 )
+
+// pageLimits are the page's. The tests also run under -race, ten times slower,
+// where a cell that takes a second runs over the page's 10 s: they run with a
+// long timeout, and the tests of the limits set what they test.
+var pageLimits = JuliaLimits
+
+// bootsKernel skips a test that boots a kernel under -short (the emulated and
+// 32-bit runs of CI): it fetches a 25 MB image and takes seconds a cell.
+func bootsKernel(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("boots a Julia kernel from a 25 MB image")
+	}
+}
+
+func init() { JuliaLimits.Timeout = 10 * time.Minute }
 
 // The tests that run Julia need the pinned image (25 MB): it is fetched by its
 // digest on the first one, and kept in the user's cache directory. Kernels
@@ -23,6 +42,7 @@ import (
 // a cell prints is its output and the value of its last expression is shown as
 // the REPL shows it, and the Go cells are unaffected.
 func TestJuliaCells(t *testing.T) {
+	bootsKernel(t)
 	nb := "```go\nn := 10\n```\n" +
 		"```julia\nprintln(\"hi\")\nxs = [i^2 for i in 1:3]\n```\n" +
 		"```julia\nys = xs .+ 1\n```\n" +
@@ -34,7 +54,7 @@ func TestJuliaCells(t *testing.T) {
 	if r := res[1]; r.Error != "" || r.Status != "" || r.Output != "hi\n" || len(r.Display) != 1 || r.Display[0]["text/plain"] != "3-element Vector{Int64}:\n 1\n 4\n 9" {
 		t.Errorf("Julia cell 1: %+v", r)
 	}
-	if r := res[2]; r.Error != "" || r.Output != "" || len(r.Display) != 1 || r.Display[0]["text/plain"] != "3-element Vector{Int64}:\n 2\n 5\n10" {
+	if r := res[2]; r.Error != "" || r.Output != "" || len(r.Display) != 1 || r.Display[0]["text/plain"] != "3-element Vector{Int64}:\n  2\n  5\n 10" {
 		t.Errorf("Julia cell 2 reads cell 1's variable: %+v", r)
 	}
 	if !JuliaSupported || !JuliaRuns {
@@ -45,6 +65,7 @@ func TestJuliaCells(t *testing.T) {
 // The REPL's soft scope: a loop at the top of a cell assigns to the global that
 // exists (go-embedded-julia#54), so the sum is 55, not an error.
 func TestJuliaSoftScope(t *testing.T) {
+	bootsKernel(t)
 	res := Run("```julia\ns = 0\nfor i in 1:10\n    s += i\nend\ns\n```\n")
 	if res[0].Error != "" || len(res[0].Display) != 1 || res[0].Display[0]["text/plain"] != "55" {
 		t.Errorf("%+v", res[0])
@@ -55,6 +76,7 @@ func TestJuliaSoftScope(t *testing.T) {
 // checker's, at its line and column, and neither stops the cells that do not
 // read it... a failed cell does stop the run: the cells after it are skipped.
 func TestJuliaErrors(t *testing.T) {
+	bootsKernel(t)
 	res := Run("```julia\nx = 1\nsqrt(-1)\n```\n```go\n1 + 1\n```\n")
 	if want := "ERROR: DomainError with -1.0:\nsqrt was called with a negative real argument but will only return a complex result if called with a complex argument. Try sqrt(Complex(x))."; res[0].Error != want || res[0].Status != "" {
 		t.Errorf("an exception: %q", res[0].Error)
@@ -76,6 +98,7 @@ func TestJuliaErrors(t *testing.T) {
 // defines again is not a redefinition, and a variable of the first run is not
 // there.
 func TestJuliaRunsAreFresh(t *testing.T) {
+	bootsKernel(t)
 	nb := "```julia\nstruct P\n    x::Int\nend\nz = P(3)\nz.x\n```\n"
 	for i := range 2 {
 		res := Run(nb)
@@ -92,6 +115,7 @@ func TestJuliaRunsAreFresh(t *testing.T) {
 // Julia variables stay in Julia in the page, in both directions, and the cell
 // that reads one says so, besides the failure itself.
 func TestJuliaStaysIsolated(t *testing.T) {
+	bootsKernel(t)
 	res := Run("```julia\ntotal = 55\n```\n```go\ntotal + 1\n```\n")
 	if !strings.Contains(res[1].Error, "undefined: total") || !strings.Contains(res[1].Error, "cell 0, a Julia cell") || !strings.Contains(res[1].Error, "do not cross") {
 		t.Errorf("a Go cell reading Julia's: %q", res[1].Error)
@@ -106,6 +130,7 @@ func TestJuliaStaysIsolated(t *testing.T) {
 // kernel: the next cell of the notebook (here, skipped; in a new run, run)
 // works. The output cap drops the rest and says so.
 func TestJuliaLimits(t *testing.T) {
+	bootsKernel(t)
 	saved := JuliaLimits
 	t.Cleanup(func() { JuliaLimits = saved })
 
@@ -145,6 +170,9 @@ func TestJuliaLimits(t *testing.T) {
 
 // The page's limits are R's where R has them: 512 MiB, 20 million steps, 10 s.
 func TestJuliaLimitsAreThePages(t *testing.T) {
+	saved := JuliaLimits
+	t.Cleanup(func() { JuliaLimits = saved })
+	JuliaLimits = pageLimits
 	if JuliaLimits.MaxAlloc != RLimits.MaxAlloc || JuliaLimits.MaxSteps != int64(RLimits.MaxSteps) || JuliaLimits.Timeout != RLimits.Timeout {
 		t.Errorf("%+v against R's %+v", JuliaLimits, RLimits)
 	}
@@ -213,6 +241,7 @@ func TestCheckOnly(t *testing.T) {
 // The pinned image is the one go-notebook's jcells pins: a release moves both
 // or neither.
 func TestImageIsTheOneGoNotebookPins(t *testing.T) {
+	bootsKernel(t)
 	if JuliaImageVersion != jcells.Version || JuliaImageDigest != jcells.Digest {
 		t.Errorf("the page pins %s %s, go-notebook %s %s", JuliaImageVersion, JuliaImageDigest, jcells.Version, jcells.Digest)
 	}
@@ -225,9 +254,77 @@ func TestImageIsTheOneGoNotebookPins(t *testing.T) {
 	}
 }
 
+// The failures that need no kernel: the pinned digest parses, an image that
+// cannot be had stops the kernel and the warm-up with its reason, a fetch that
+// fails is kept, and every error of a cell has Julia's or the bound's words.
+func TestJuliaFailures(t *testing.T) {
+	if _, err := interp.ParseDigest(JuliaImageDigest); err != nil || pinned == [32]byte{} {
+		t.Fatalf("the pinned digest: %v", err)
+	}
+	saved := juliaImage
+	t.Cleanup(func() { juliaImage = saved })
+	juliaImage = func() ([]byte, error) { return nil, errors.New("no image") }
+	if _, err := loadKernel(); err == nil || err.Error() != "no image" {
+		t.Errorf("loadKernel: %v", err)
+	}
+	if err := WarmJulia(); err == nil || err.Error() != "no image" {
+		t.Errorf("WarmJulia: %v", err)
+	}
+	// bytes that are not the image: the kernel refuses them by digest
+	juliaImage = func() ([]byte, error) { return []byte("not an image"), nil }
+	if _, err := loadKernel(); !errors.Is(err, interp.ErrImageDigest) {
+		t.Errorf("a wrong image: %v", err)
+	}
+
+	// the fetch of the image, once, and its failure kept
+	savedFetch, savedBytes, savedErr := fetchImage, imageBytes, imageErr
+	t.Cleanup(func() { fetchImage, imageBytes, imageErr, imageOnce = savedFetch, savedBytes, savedErr, sync.Once{} })
+	imageOnce = sync.Once{}
+	calls := 0
+	fetchImage = func(context.Context, string, [32]byte, interp.FetchOptions) ([]byte, error) {
+		calls++
+		return nil, errors.New("offline")
+	}
+	for range 2 {
+		if _, err := fetchedImage(); err == nil || err.Error() != "offline" {
+			t.Errorf("fetchedImage: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("the image was fetched %d times", calls)
+	}
+
+	saved2 := JuliaLimits
+	t.Cleanup(func() { JuliaLimits = saved2 })
+	JuliaLimits = pageLimits
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("%w (x)", interp.ErrCellCanceled), "stopped: the Julia cell was cancelled"},
+		{interp.ErrCellTimeout, "stopped: the Julia cell ran longer than 10s, the limit"},
+		{errors.New("boom"), "the Julia cell failed: boom"},
+		{&interp.JuliaError{Message: "m"}, "ERROR: m"},
+	} {
+		if got := juliaFailure(tc.err); got != tc.want {
+			t.Errorf("juliaFailure(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+	JuliaLimits.Timeout = 0
+	if got := juliaFailure(interp.ErrCellTimeout); got != "stopped: the Julia cell's deadline passed" {
+		t.Errorf("no timeout: %q", got)
+	}
+	if showValue("nothing", "x") || showValue("", "x") || showValue("1", "x;\n") || !showValue("1", "x") {
+		t.Error("showValue")
+	}
+	var s session
+	s.closeJulia() // nothing to close
+}
+
 // A kernel booted ahead (WarmJulia, as the page does before it says the core is
 // ready) is the one the next run takes, once.
 func TestJuliaWarmKernel(t *testing.T) {
+	bootsKernel(t)
 	saved := loader
 	t.Cleanup(func() { loader = saved })
 	n := 0

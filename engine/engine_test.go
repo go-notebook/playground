@@ -43,6 +43,9 @@ func TestExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if testing.Short() && strings.Contains(string(src), "```julia") {
+				t.Skip("runs Julia: fetches a 25 MB image")
+			}
 			// A Windows checkout has CRLF line endings.
 			got := transcript(Run(strings.ReplaceAll(string(src), "\r\n", "\n")))
 			golden := filepath.Join("testdata", "golden", name+".txt")

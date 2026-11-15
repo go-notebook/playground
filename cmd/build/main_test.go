@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-notebook/notebook/analysis"
 	"github.com/spf13/cobra"
@@ -21,6 +22,10 @@ import (
 
 	"github.com/go-notebook/playground/engine"
 )
+
+// The tests also run under -race, ten times slower, where a Julia cell of the
+// examples can pass the page's 10 s: the build's own runs get a long timeout.
+func init() { engine.JuliaLimits.Timeout = 10 * time.Minute }
 
 // examples are this repository's statistics notebooks.
 func examples(t *testing.T) []string {
@@ -247,6 +252,10 @@ func TestJuliaNotebooks(t *testing.T) {
 		{name: "csyntax", src: "```c\nint y = 2;\nint x = y y;\n```\n", err: "csyntax.md does not run", log: "csyntax.md:2: cell 0 failed:\nline 2:11: unexpected identifier, expected ';'"},
 		{name: "calone", src: "```c\nmyint v = 1;\n```\n", err: "calone.md does not run", log: "line 1:7: unexpected identifier"},
 	} {
+		// (a syntax error stops before the kernel boots; any other Julia cell boots it)
+		if testing.Short() && strings.Contains(tc.src, "```julia") && !strings.Contains(tc.name, "syntax") {
+			continue
+		}
 		log.Reset()
 		p := write(tc.name+".md", tc.src)
 		err := runTo(log, "-o", t.TempDir(), p)
@@ -379,6 +388,13 @@ func TestJuliaImageAsset(t *testing.T) {
 	seam(t, &juliaImage, func() ([]byte, error) { return nil, errors.New("no network") })
 	if _, err := writeJuliaImage(out); err == nil || !strings.Contains(err.Error(), "the Julia image: no network") {
 		t.Errorf("an image that cannot be had: %v", err)
+	}
+	// and a build whose image cannot be had writes nothing it says it did
+	seam(t, &juliaImage, func() ([]byte, error) { return nil, errors.New("no network") })
+	seam(t, &goCmd, fakeGo(fakeRoot(t)))
+	quiet(t)
+	if err := runTo(&bytes.Buffer{}, "-o", t.TempDir(), examples(t)[1]); err == nil || !strings.Contains(err.Error(), "the Julia image: no network") {
+		t.Errorf("a build without the image: %v", err)
 	}
 	seam(t, &juliaImage, func() ([]byte, error) { return img, nil })
 	blocked := t.TempDir()

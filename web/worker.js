@@ -193,18 +193,13 @@ onmessage = (e) => {
           : self.playgroundRun(markdown, typeof last === 'number' ? last : -1);
     postMessage({ type: 'result', id, json, ms: performance.now() - t });
     if (julia && op === 'run') {
-      // A run closes the kernel it used (each run has a Main of its own): boot
-      // the next one now, while the page is idle, so that the next run does not
-      // wait for it.
-      setTimeout(() => {
-        postMessage({ type: 'warming' });
-        try {
-          self.playgroundJuliaWarm();
-        } catch (err) {
-          // the next run says why it cannot start
-        }
-        postMessage({ type: 'warmed' });
-      }, 0);
+      // This instance has run Julia: it never boots another kernel. A kernel that
+      // has run code mutates process-wide type state in go-embedded-julia, and a
+      // later LoadKernel in the same process can fail ("image is malformed"); and
+      // a kernel's memory does not come back to the instance (about a GiB a boot:
+      // the seventh ran out of the 4 GiB). So the page is asked to replace this
+      // worker, a new wasm instance with a fresh kernel, while it is idle.
+      postMessage({ type: 'recycle' });
     }
   } catch (err) {
     postMessage({ type: 'error', id, error: String(err) });

@@ -72,12 +72,11 @@ func loadKernel() (*interp.Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := interp.ParseDigest(JuliaImageDigest)
-	if err != nil {
-		return nil, err
-	}
-	return interp.LoadKernel(bytes.NewReader(img), interp.LoadOptions{Digest: &d}, interp.KernelOptions{})
+	return interp.LoadKernel(bytes.NewReader(img), interp.LoadOptions{Digest: &pinned}, interp.KernelOptions{})
 }
+
+// pinned is JuliaImageDigest as the kernel takes it (a test holds that it parses).
+var pinned, _ = interp.ParseDigest(JuliaImageDigest)
 
 // warm is a kernel made ahead of the run that will use it: the page boots it
 // before it says the Julia core is ready (loading takes seconds, the first cell

@@ -43,13 +43,16 @@ jobs:
           # The core with Ruby cells, which the page loads for a notebook that has one.
           GOOS=js GOARCH=wasm go vet -tags ruby,rbgo_core ./cmd/playground ./engine
           GOOS=js GOARCH=wasm go build -tags ruby,rbgo_core -o /dev/null ./cmd/playground
+          # The core with Julia cells, which the page loads when a Julia cell is run.
+          GOOS=js GOARCH=wasm go vet -tags ruby,rbgo_core,julia ./cmd/playground ./engine
+          GOOS=js GOARCH=wasm go build -tags ruby,rbgo_core,julia -o /dev/null ./cmd/playground
           # The code editor, which the page loads on its main thread.
           GOOS=js GOARCH=wasm go vet ./cmd/editor && GOOS=js GOARCH=wasm go build -o /dev/null ./cmd/editor
       - name: Test + 100% coverage gate
         shell: bash
         run: |
           COVERPKG=$(go list ./... | grep -v /internal/yaegi/ | paste -sd, -)
-          go test -race -coverpkg="$COVERPKG" -coverprofile=cover.out ./...
+          go test -race -timeout 30m -coverpkg="$COVERPKG" -coverprofile=cover.out ./...
           go tool cover -func=cover.out | tail -n 25
           cov=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}' | tr -d '%')
           echo "coverage: ${cov}%"

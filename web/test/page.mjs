@@ -792,14 +792,24 @@ async function limitChecks() {
 // the renderer that holds the page and its worker is in it, with the 20 MB core,
 // the image, and the kernel's heap. Only a local run can say it.
 function chromiumRssMB() {
-  const exe = chromium.executablePath();
-  const root = /\.app\//.test(exe) ? exe.replace(/(\.app)\/.*$/, '$1') : path.dirname(exe);
-  const ps = execFileSync('ps', ['-axo', 'rss=,command='], { encoding: 'utf8' });
-  let kb = 0;
-  for (const line of ps.split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(.*)$/);
-    if (m && m[2].startsWith(root)) kb += +m[1];
+  // The browser this process started is its child; every other process of it
+  // descends from that one (other sessions' browsers are not counted).
+  const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,rss='], { encoding: 'utf8' })
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/).map(Number))
+    .filter((r) => r.length === 3 && !r.some(Number.isNaN));
+  const mine = new Set(rows.filter(([, ppid]) => ppid === process.pid).map(([pid]) => pid));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [pid, ppid] of rows) {
+      if (!mine.has(pid) && mine.has(ppid)) {
+        mine.add(pid);
+        grew = true;
+      }
+    }
   }
+  let kb = 0;
+  for (const [pid, , rss] of rows) if (mine.has(pid)) kb += rss;
   return kb / 1024;
 }
 
@@ -854,8 +864,15 @@ async function juliaChecks(name) {
     if (cells.some((c) => c.lang === 'go' && c.out === '20') === false) fail('Julia: the Go cell beside the Julia cells does not run: ' + JSON.stringify(cells));
     const failedStyle = await page.$$eval('#notebook .output.error', (es) => es.map((e) => e.textContent));
     if (failedStyle.length) fail('Julia example: cells failed: ' + failedStyle.join('; '));
-    const badge = await page.$eval('#notebook .cell[data-lang="julia"] .cell-head .lang-badge', (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
-    if (badge !== 'Julia') fail('the badge of a Julia cell once Julia runs: ' + JSON.stringify(badge));
+    // (the page replaces the Julia worker after each run: the badge says it is
+    // loading until the new one is ready, then says Julia alone)
+    const badgeNow = () => page.$eval('#notebook .cell[data-lang="julia"] .cell-head .lang-badge', (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
+    const restarting = await badgeNow();
+    if (restarting !== 'Julia' && restarting !== 'Julia · loading the Julia runtime…') fail('the badge of a Julia cell once Julia runs: ' + JSON.stringify(restarting));
+    await page.waitForFunction(() => {
+      const b = document.querySelector('#notebook .cell[data-lang="julia"] .cell-head .lang-badge');
+      return b && b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent === 'Julia';
+    }, null, { timeout: 120000 }).catch(() => fail('the badge of a Julia cell never says Julia once the new worker is ready'));
 
     // What was downloaded, against what the note says: the third core and the
     // image, as GitHub Pages serves them (gzip of the core, the image as
@@ -872,6 +889,44 @@ async function juliaChecks(name) {
     }
     const mem = await page.evaluate(() => window.playgroundMemory());
     console.log(`Julia memory after the first run: wasm linear memory ${(mem.wasm / 1048576).toFixed(0)} MiB, image held by the worker ${(mem.image / 1048576).toFixed(1)} MiB, browser processes ${chromiumRssMB().toFixed(0)} MB resident (${before.toFixed(0)} MB before, peak ${peak.toFixed(0)} MB)`);
+
+    // 1b. A Julia cell typed in the code editor (the canvas surface, with --editor)
+    // or in the textarea: Shift+Enter runs it, in the Julia core already loaded.
+    await openFile(page, 'typed.md', '```julia\nx = 20\n```\n');
+    await waitDone(page);
+    await page.click('#add-end');
+    await page.click('.add-menu:not([hidden]) button[data-kind="julia"]');
+    await page.waitForFunction((ed) => {
+      const a = document.activeElement;
+      const keys = !!a && (ed ? a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror') : a.tagName === 'TEXTAREA');
+      return keys && a.closest('.cell').dataset.lang === 'julia';
+    }, expectEditor);
+    await page.keyboard.type('6 * 7');
+    await settle(page);
+    await page.waitForFunction((ed) => {
+      const a = document.activeElement;
+      return !!a && (ed ? a.hasAttribute('data-webcanvas-layer') : a.tagName === 'TEXTAREA');
+    }, expectEditor);
+    await page.keyboard.press('Shift+Enter');
+    await waitDone(page);
+    cells = await codeState(page);
+    if (cells.length !== 2 || cells[1].lang !== 'julia' || cells[1].out !== '42') fail('a Julia cell typed in the editor: ' + JSON.stringify(cells));
+
+    // 1c. Julia twice in a row: each run is a new kernel in a new wasm instance
+    // (go-embedded-julia cannot boot a second kernel in a process that has run
+    // Julia), so a struct a notebook defines is defined again without error, the
+    // first run's variables are gone, and neither run is lost.
+    const twice = '```julia\nstruct P\n    x::Int\nend\nP(21).x * 2\n```\n';
+    for (const n of [1, 2, 3]) {
+      await openFile(page, `twice${n}.md`, twice);
+      await page.waitForSelector(DONE, { timeout: 120000 });
+      cells = await codeState(page);
+      if (cells.length !== 1 || cells[0].out !== '42') fail(`Julia run ${n} of the same notebook: ` + JSON.stringify(cells));
+    }
+    await openFile(page, 'gone.md', '```julia\nP\n```\n');
+    await page.waitForSelector(DONE, { timeout: 120000 });
+    cells = await codeState(page);
+    if (!/UndefVarError/.test(cells[0].out)) fail('a variable of an earlier Julia run is still there: ' + JSON.stringify(cells));
 
     // 2. The cells of one run, each on the same worker.
     const run = async (src, extra = '') => {
@@ -903,11 +958,19 @@ async function juliaChecks(name) {
     // message; the worker is not killed (the page's 30 s limit did not fire).
     const workers = await page.evaluate(() => window.playgroundWorkers);
     const ts = Date.now();
+    // (an empty `while true` is stopped by whichever bound it reaches first: its
+    // 20 million statements come up in about 9 s here, the 10 s next to it; a
+    // sleep has no statements to count, so it is the timeout alone)
+    const bounds = /^stopped: the Julia cell (ran longer than 10s|executed more than 20000000 statements), the limit$/;
     cells = await run('while true\nend', '```julia\n1 + 1\n```\n');
-    const spun = Date.now() - ts;
-    console.log(`Julia spinning cell (${spun} ms): ` + JSON.stringify(cells[0].out));
-    if (cells[0].out !== 'stopped: the Julia cell ran longer than 10s, the limit' || /worker was killed/.test(cells[0].out)) fail('a spinning Julia cell: ' + JSON.stringify(cells));
-    if (spun > 25000) fail(`the spinning cell took ${spun} ms: the kernel's 10 s did not end it`);
+    console.log(`Julia spinning cell (${Date.now() - ts} ms): ` + JSON.stringify(cells[0].out));
+    if (!bounds.test(cells[0].out)) fail('a spinning Julia cell: ' + JSON.stringify(cells));
+    const ts2 = Date.now();
+    cells = await run('sleep(60)', '```julia\n1 + 1\n```\n');
+    const spun = Date.now() - ts2;
+    console.log(`Julia sleeping cell (${spun} ms): ` + JSON.stringify(cells[0].out));
+    if (cells[0].out !== 'stopped: the Julia cell ran longer than 10s, the limit' || /worker was killed/.test(cells[0].out)) fail('a sleeping Julia cell is not stopped by the kernel\'s timeout: ' + JSON.stringify(cells));
+    if (spun > 30000) fail(`the sleeping cell took ${spun} ms: the kernel's 10 s did not end it`);
     if (!/Not run: a cell above failed/.test(cells[1].out)) fail('the cell after the stopped one should be skipped: ' + JSON.stringify(cells));
     if ((await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('a spinning Julia cell restarted the core');
     cells = await run('6 * 7');
@@ -918,7 +981,7 @@ async function juliaChecks(name) {
     console.log('Julia memory limit: ' + JSON.stringify(cells[0].out.slice(0, 100)));
     if (!/^stopped: the Julia cell went over its memory limit/.test(cells[0].out)) fail('Julia memory limit: ' + JSON.stringify(cells));
     cells = await run('n = 0\nfor i in 1:30_000_000\n    n += 1\nend');
-    if (!/^stopped: the Julia cell executed more than 20000000 statements, the limit/.test(cells[0].out)) fail('Julia step limit: ' + JSON.stringify(cells));
+    if (!bounds.test(cells[0].out)) fail('Julia step limit: ' + JSON.stringify(cells));
     if ((await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('a limit restarted the Julia core');
 
     // 6. Deep recursion, in the default V8 stack: measured, not worked around.
@@ -935,13 +998,21 @@ async function juliaChecks(name) {
       cells = await run(src);
       const restarts = (await page.evaluate(() => window.playgroundWorkers)) - w;
       console.log(`Julia recursion ${what} (${Date.now() - t} ms, ${restarts} worker restarts): ` + JSON.stringify(cells[0].out.slice(0, 110)));
-      if (restarts) {
-        console.log(`REPORT UPSTREAM: deep recursion (${what}) killed the Julia core in Chromium: ${cells[0].out}`);
-        await page.waitForFunction(() => document.getElementById('run') && !document.getElementById('run').disabled, null, { timeout: 120000 });
-      }
+      // Measured in Chromium: Julia's own depth bound answers (StackOverflowError)
+      // from 10,000 deep on; the core is not lost. A loss would be a defect to
+      // report upstream, not to work around.
+      if (restarts) fail(`deep recursion (${what}) killed the Julia core in Chromium (report to go-embedded-julia): ${cells[0].out}`);
+      if (what !== '1,000 deep' && !/^ERROR: StackOverflowError/.test(cells[0].out)) fail(`recursion ${what}: ${JSON.stringify(cells)}`);
       const after = await run('1 + 2');
       if (after[0].out !== '3') fail(`after Julia recursion ${what}, the next run: ` + JSON.stringify(after));
     }
+    // Every boot of a kernel keeps about a GiB of the instance's memory until the
+    // instance ends, so the page replaces the worker before the 4 GiB run out
+    // (about the seventh run did, before): the many runs above survived by it.
+    const recycles = await page.evaluate(() => window.playgroundRecycles || 0);
+    const finalMem = await page.evaluate(() => window.playgroundMemory());
+    console.log(`Julia: ${recycles} planned worker replacements over the runs above; linear memory now ${(finalMem.wasm / 1048576).toFixed(0)} MiB; browser processes ${chromiumRssMB().toFixed(0)} MB resident, peak ${peak.toFixed(0)} MB (${before.toFixed(0)} MB before Julia)`);
+    if (!recycles) fail('Julia: no worker replacement over more than twenty runs: the memory would have run out');
   } finally {
     clearInterval(sampler);
     await page.close();
@@ -952,7 +1023,8 @@ async function juliaChecks(name) {
   const bad = await browser.newPage();
   bad.on('pageerror', (e) => fail('Julia failure page error: ' + e.message));
   const attempts = [];
-  await bad.route(/julia-image-/, (route) => {
+  // (by path: the worker's own URL carries the image's name in its query)
+  await bad.route((u) => /\/julia-image-[^/]*\.bin\.gz$/.test(u.pathname), (route) => {
     attempts.push(route.request().url());
     return route.abort('connectionrefused');
   });

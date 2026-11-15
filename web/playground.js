@@ -19,7 +19,7 @@
   // the seconds to download them on a fast link, decode the image and boot the
   // kernel.
   const JULIA_DOWNLOAD_MB = 28;
-  const JULIA_LOAD_S = 12;
+  const JULIA_LOAD_S = 16;
   const article = $('notebook');
   const status = $('status');
   const runButton = $('run');
@@ -74,6 +74,8 @@
   let juliaDown = null;
   // juliaLoading is the note on a Julia cell while its core loads.
   let juliaLoading = null;
+  // recycling marks the next worker start as a planned replacement.
+  let recycling = false;
   let queue = [];
   const pending = new Map();
   let nextId = 1;
@@ -84,7 +86,11 @@
   let overLimit = false;
 
   function startWorker() {
-    window.playgroundWorkers = (window.playgroundWorkers || 0) + 1; // for the browser test
+    // for the browser test: workers started, and apart from them the Julia
+    // worker's planned replacements (see the 'recycle' message)
+    if (recycling) window.playgroundRecycles = (window.playgroundRecycles || 0) + 1;
+    else window.playgroundWorkers = (window.playgroundWorkers || 0) + 1;
+    recycling = false;
     ready = false;
     fatal = null;
     updateBadges();
@@ -111,6 +117,18 @@
         return;
       }
       if (m.type === 'warmed') return;
+      if (m.type === 'recycle') {
+        // The Julia worker has run Julia, so it is replaced, while nothing waits
+        // for it, by a new instance with a fresh kernel (a kernel that has run code
+        // cannot be followed by another in one instance, and each boot keeps about
+        // a GiB). The next Run waits for what is left of its load.
+        if (pending.size === 0 && !running) {
+          recycling = true;
+          setStatus('Restarting Julia for a fresh kernel (about 10 s)…');
+          restart('julia');
+        }
+        return;
+      }
       if (m.type === 'downloading') {
         if (carousel) carousel.downloading();
         return;
@@ -1043,6 +1061,7 @@
       setStatus(
         (failed ? 'A cell failed. ' : '') +
           `Ran ${results.length} cell${results.length === 1 ? '' : 's'} in ${fmtMs(reply.ms)}.` +
+          (juliaDown !== null && code.some((c) => c.lang === 'julia') ? ` Julia did not start (${juliaDown}); the other languages are unaffected.` : '') +
           ` Runtime ready ${fmtMs(timings.runtimeReady)}, first result ${fmtMs(timings.firstResult)} after the page started loading.`
       );
       document.body.dataset.state = 'done';

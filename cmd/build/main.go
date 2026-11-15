@@ -379,12 +379,8 @@ func writeJuliaImage(out string) (juliaAsset, error) {
 	}
 	var buf bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression) // a valid level
-	if _, err := zw.Write(img); err != nil {
-		return juliaAsset{}, err
-	}
-	if err := zw.Close(); err != nil {
-		return juliaAsset{}, err
-	}
+	_, _ = zw.Write(img)                                     // into memory: cannot fail
+	_ = zw.Close()
 	name := fmt.Sprintf("julia-image-%s-%s.bin.gz", engine.JuliaImageVersion, engine.JuliaImageDigest[:8])
 	if err := os.WriteFile(filepath.Join(out, name), buf.Bytes(), 0o644); err != nil {
 		return juliaAsset{}, err

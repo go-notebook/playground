@@ -18,21 +18,21 @@ var (
 	imageOnce  sync.Once
 	imageBytes []byte
 	imageErr   error
+	// fetchImage is interp.FetchImage; a seam for the test of its failure.
+	fetchImage = interp.FetchImage
+	// juliaImage is the verified image the kernel boots from; a seam for the
+	// test of a kernel that cannot start.
+	juliaImage = fetchedImage
 )
 
-func juliaImage() ([]byte, error) {
+func fetchedImage() ([]byte, error) {
 	imageOnce.Do(func() {
-		d, err := interp.ParseDigest(JuliaImageDigest)
-		if err != nil {
-			imageErr = err
-			return
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		imageBytes, imageErr = interp.FetchImage(ctx, JuliaImageVersion, d, interp.FetchOptions{})
+		imageBytes, imageErr = fetchImage(ctx, JuliaImageVersion, pinned, interp.FetchOptions{})
 	})
 	return imageBytes, imageErr
 }
 
 // JuliaImage is the verified image, for cmd/build, which compresses it for the page.
-func JuliaImage() ([]byte, error) { return juliaImage() }
+func JuliaImage() ([]byte, error) { return fetchedImage() }
