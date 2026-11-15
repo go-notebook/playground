@@ -1265,7 +1265,8 @@ try {
   // Only now, with every other language run, does a Julia cell run: nothing of
   // Julia was fetched until here.
   if (juliaRequests.length) fail('the Julia core or its image was fetched though no Julia cell ran: ' + juliaRequests.join(' '));
-  if (sawJuliaExample === null) fail('no example with a Julia cell');
+  // (only the notebook site has a Julia example; the others show nothing of Julia)
+  if (sawJuliaExample === null) console.log('no example with a Julia cell on this site: the Julia checks are not run');
   else await juliaChecks(sawJuliaExample);
 } finally {
   await browser.close();

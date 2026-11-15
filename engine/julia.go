@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-embedded-julia/julia/interp"
 )
@@ -20,30 +19,6 @@ import (
 // cell is run: the default core and the second never carry it (20 MB of
 // WebAssembly and a 25 MB image).
 const JuliaRuns = true
-
-// JuliaLimits bound what one Julia cell may use in the page, as RLimits bound R's:
-// a tab must not run out of memory or freeze, and a runaway cell ends with a
-// message and leaves the page usable.
-//
-//   - MaxAlloc 512 MiB, as R's: the kernel counts the elements of the arrays and
-//     dictionaries a cell allocates, 16 bytes each (a floor of the memory, not the
-//     heap: boxed values cost more and strings are not counted), and no array may
-//     have more than 2^24 elements whatever the limit;
-//   - MaxSteps 20 million statements: a runaway loop ends on the count, the same
-//     on every machine, in a few seconds;
-//   - Timeout 10 s, under the page's watchdog (CELL_LIMIT_S, 30 s unless the
-//     page says otherwise), so that the cell is stopped with Julia's own message
-//     and its kernel kept, before the worker has to be killed;
-//   - MaxOutput 16 MiB to each of standard output and error, the rest dropped,
-//     and the cell says so.
-//
-// A test may change them; the page does not.
-var JuliaLimits = struct {
-	MaxAlloc  int
-	MaxSteps  int64
-	Timeout   time.Duration
-	MaxOutput int
-}{MaxAlloc: 512 << 20, MaxSteps: 20_000_000, Timeout: 10 * time.Second, MaxOutput: 16 << 20}
 
 // elemBytes is what the kernel's allocation count charges for one element (a Go
 // `any`), as go-notebook's jcells has it.
