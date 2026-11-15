@@ -484,6 +484,35 @@ async function fortranLimitChecks() {
     const after = await codeState(page);
     if (!/^42$/.test(after[0].out.trim()) || after[1].out !== '2') fail(`Fortran ${what}: the run after the limit: ` + JSON.stringify(after));
   }
+  // Deep recursion and a memory bomb must be the cell's failure, not the core's:
+  // a RangeError (the browser's call stack, which the evaluator's 32768 nested
+  // calls overran at about 800 to 2500) or 4 GiB of arrays kills the Go instance
+  // and restarts the worker. The error is the evaluator's, the worker count does
+  // not move, and the next run, in the same session, works.
+  const module = 'module m\ncontains\nrecursive function f(k) result(r)\ninteger :: k, r, i, j\nr = 0\nif (k > 0) then\ndo i = 1, 1\ndo j = 1, 1\nif (i == j) then\nselect case (k)\ncase default\nif (k > 0) then\nr = f(k - 1) + 1\nend if\nend select\nend if\nend do\nend do\nend if\nend function\nend module';
+  const hard = [
+    ['deep recursion, infinite', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
+    ['deep recursion, 150 deep still runs', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(150)\n```\n', /^150$/, 1, true],
+    ['memory bomb, two 2^27 arrays', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**27))\nallocate(b(2**27))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+    ['memory bomb, one 2^28 array', '```fortran\ninteger, allocatable :: a(:)\nallocate(a(2**28))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+  ];
+  for (const [what, md, want, idx, ok] of hard) {
+    const workers = await page.evaluate(() => window.playgroundWorkers);
+    const t0 = Date.now();
+    await openFile(page, `fortran-hard-${idx}.md`, md);
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    const cells = await codeState(page);
+    const out = cells[idx].out.trim();
+    console.log(`Fortran ${what} (${Date.now() - t0} ms): ` + JSON.stringify(out.slice(0, 100)));
+    if (!want.test(out) || /runtime failed|RangeError|worker was killed/.test(out)) fail(`Fortran ${what}: not the evaluator's own result: ` + JSON.stringify(cells));
+    if (!ok && cells[idx + 1] && !/Not run: a cell above failed/.test(cells[idx + 1].out)) fail(`Fortran ${what}: the cell after the stopped one should be skipped: ` + JSON.stringify(cells));
+    const restarted = await page.evaluate((w) => window.playgroundWorkers - w, workers);
+    if (restarted !== 0) fail(`Fortran ${what}: ${restarted} worker start(s), the core must not be restarted`);
+    await openFile(page, `fortran-after-hard-${idx}.md`, '```fortran\ninteger :: k = 6\nprint *, k * 7\n```\n```go\n1 + 1\n```\n');
+    await waitDone(page);
+    const after = await codeState(page);
+    if (!/^42$/.test(after[0].out.trim()) || after[1].out !== '2') fail(`Fortran ${what}: the run after: ` + JSON.stringify(after));
+  }
   await page.close();
 }
 
