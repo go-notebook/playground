@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.40.3
-	github.com/go-notebook/notebook v0.18.0
+	github.com/go-notebook/notebook v0.20.0
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
@@ -100,8 +100,8 @@ require (
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-c/c v0.2.1 // indirect
-	github.com/go-embedded-fortran/fortran v0.17.0 // indirect
-	github.com/go-embedded-julia/julia v0.15.0 // indirect
+	github.com/go-embedded-fortran/fortran v0.24.1 // indirect
+	github.com/go-embedded-julia/julia v0.17.0 // indirect
 	github.com/go-embedded-r/r v0.17.1 // indirect
 	github.com/go-embedded-r/tre v0.1.3 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect

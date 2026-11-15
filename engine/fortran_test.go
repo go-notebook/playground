@@ -106,11 +106,34 @@ func TestFortranLimitsStopARunawayCell(t *testing.T) {
 	}
 }
 
+// The page's budget counts what the notebook holds: two arrays of 2^25 int64
+// (256 MiB each), 100000 objects with a 64000-byte array component and objects
+// with a 1 MiB character component are refused as the cell's failure, before
+// they are allocated, and the next cell runs: the page's bound, not a test's.
+func TestFortranHeapBombIsRefused(t *testing.T) {
+	for name, src := range map[string]string{
+		"accumulation":        "integer, allocatable :: a(:), b(:)\nallocate(a(2**25))\nallocate(b(2**25))\n",
+		"array component":     "type :: t\nreal(8) :: x(8000)\nend type\ntype(t) :: a(100000)\n",
+		"character component": "type :: u\ncharacter(len=1048576) :: c\nend type\ntype(u) :: a(2000)\n",
+	} {
+		res := Run("```fortran\n" + src + "```\n```fortran\nprint *, 1\n```\n")
+		if !strings.Contains(res[0].Error, "memory limit exceeded") || !res[1].Skipped {
+			t.Errorf("%s: %+v", name, res)
+		}
+	}
+	if res := Run("```fortran\nprint *, 1 + 1\n```\n"); strings.TrimSpace(res[0].Output) != "2" {
+		t.Errorf("the next run: %+v", res[0])
+	}
+}
+
 // The options the page ships with are bounded: the steps are far under the
 // default's 2^32, and the time is under the page's 30 s watchdog.
 func TestPageFortranOptions(t *testing.T) {
 	if FortranOptions.MaxSteps <= 0 || FortranOptions.MaxSteps >= fcells.DefaultMaxSteps {
 		t.Errorf("options %+v are not bounded tighter than the default's", FortranOptions)
+	}
+	if FortranOptions.MaxAlloc != 512<<20 {
+		t.Errorf("heap bound %d, want R's 512 MiB", FortranOptions.MaxAlloc)
 	}
 	if FortranOptions.Timeout <= 0 || FortranOptions.Timeout >= 30*time.Second {
 		t.Errorf("timeout %v is not under the page's 30 s watchdog", FortranOptions.Timeout)

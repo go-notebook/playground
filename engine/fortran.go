@@ -28,12 +28,20 @@ const FortranSupported = true
 //   - Timeout 10 s, under the page's watchdog (CELL_LIMIT_S, 30 s unless the
 //     page says otherwise), so the cell is stopped with the evaluator's own
 //     message and its session kept, before the worker has to be killed;
-//   - MaxOutput is go-notebook's: 16 MiB to each of standard output and error,
-//     the rest dropped, and the cell says so.
+//   - MaxAlloc 512 MiB, R's bound, a counted budget of the storage the
+//     notebook's Fortran holds: every variable, array, derived-type object and
+//     character component is charged before it is allocated, so a bomb of many
+//     small objects is refused like one big array, and R's own 450 MiB in the
+//     same core is not in the count;
+//   - MaxOutput is go-notebook's: 16 MiB to standard output and error
+//     together, the rest dropped, and the cell says so.
 //
-// The evaluator's own bounds (array elements, character length, call depth)
-// apply as well. A test may change the options; the page does not.
-var FortranOptions = fcells.Options{MaxSteps: 200_000_000, Timeout: 10 * time.Second}
+// The evaluator's own bounds (array elements, character length) apply as well,
+// and its calls are weighed under WebAssembly (go-embedded-fortran v0.23.0): a
+// browser's call stack overflows at 150 to 2500 nested calls, by the nesting of
+// the statements around the recursive call, which kills the core instead of
+// failing the cell. A test may change the options; the page does not.
+var FortranOptions = fcells.Options{MaxSteps: 200_000_000, Timeout: 10 * time.Second, MaxAlloc: 512 << 20}
 
 // fSide is the Fortran half of a session: one evaluator for every Fortran cell
 // of the notebook, whose modules, procedures and variables persist from cell to
