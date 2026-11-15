@@ -952,7 +952,9 @@ async function juliaChecks(name) {
       cells = await codeState(page);
       if (cells.length !== 1 || cells[0].out !== '7') fail(`Julia run ${n} with calls in flight: ` + JSON.stringify(cells));
     }
-    await page.waitForFunction((n) => (window.playgroundRecycles || 0) > n, rec0, { timeout: 90000 }).catch(() => fail('the Julia worker was never replaced after runs with calls in flight'));
+    // Each of the three runs executed Julia in a worker of its own, so each is
+    // followed by exactly one replacement (made when idle, or forced by the next run).
+    await page.waitForFunction((n) => (window.playgroundRecycles || 0) >= n, rec0 + 3, { timeout: 90000 }).catch(() => fail('the Julia worker was not replaced after each of three runs with calls in flight'));
     if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
 
     // 1e. A Go-only run after a Julia run does not reboot Julia: no replacement, no
