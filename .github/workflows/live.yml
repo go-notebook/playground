@@ -1,0 +1,35 @@
+name: live
+
+# The same headless check as ci.yml's page job, run against the playgrounds as
+# deployed on GitHub Pages instead of a local build: what a visitor gets (the
+# code editor included) can drift from what CI builds. Daily, and by hand
+# after a Pages deploy (Actions > live > Run workflow).
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  page:
+    name: ${{ matrix.url }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        url:
+          - https://go-notebook.github.io/playground/
+          # go-statistics and go-numerics serve an older build (no editor.wasm,
+          # no loading carousel, 2026-11-15; this check fails on both): add
+          # them here once their Pages deploys are redone.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - name: Install Playwright and Chromium
+        working-directory: web/test
+        run: npm ci && npx playwright install --with-deps chromium
+      - run: node web/test/page.mjs ${{ matrix.url }}
