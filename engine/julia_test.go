@@ -336,7 +336,10 @@ func TestJuliaWarmKernel(t *testing.T) {
 	if err := WarmJulia(); err != nil || n != 1 {
 		t.Fatalf("a second warm-up loaded again: %d, %v", n, err)
 	}
-	if res := Run("```julia\n1 + 1\n```\n"); res[0].Error != "" || n != 1 {
+	if res := Run("```go\n1 + 1\n```\n"); res[0].Error != "" || n != 1 {
+		t.Errorf("a Go-only run took the warm kernel: %d loads, %+v", n, res[0])
+	}
+	if res := Run("```julia\n1 + 1\n```\n"); res[0].Error != "" || n != 1 || !JuliaUsed() {
 		t.Errorf("the run did not take the warm kernel: %d loads, %+v", n, res[0])
 	}
 	if res := Run("```julia\n2 + 2\n```\n"); res[0].Error != "" || n != 2 {

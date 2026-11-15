@@ -102,7 +102,7 @@ const corePattern = /\/playground(-ruby|-julia)?\.wasm(\?.*)?$/;
 // default core must never ask for either unless a Julia cell is run (it is
 // asserted below, on the requests of the page and of its workers).
 const JULIA_FILES = /\/(playground-julia\.wasm|julia-image-[^/]*\.bin\.gz)(\?|$)/;
-// What the page says loading Julia costs: "Loading Julia (~28 MB, about 12 s)…".
+// What the page says loading Julia costs: "Loading Julia (~28 MB, about 20 s)…".
 const JULIA_NOTE = /Loading Julia \(~(\d+) MB, about (\d+) s\)/;
 async function holdCore(context) {
   // The worker first asks the browser's cache for the core (only-if-cached,
@@ -885,7 +885,10 @@ async function juliaChecks(name) {
       const mb = (gz + wire.get(image)) / 1e6;
       console.log(`Julia download: core ${(wire.get(core) / 1e6).toFixed(1)} MB (${(gz / 1e6).toFixed(1)} MB gzipped, as GitHub Pages sends it) + image ${(wire.get(image) / 1e6).toFixed(1)} MB = ${mb.toFixed(1)} MB over the wire; the page says ~${said && said[1]} MB, about ${said && said[2]} s; measured ${(loadMs / 1000).toFixed(1)} s`);
       if (said && Math.abs(mb - +said[1]) > 0.25 * mb) fail(`Julia: the page says ~${said[1]} MB, the download is ${mb.toFixed(1)} MB`);
+      // (the time depends on the machine: a note when it is off by a quarter, a
+      // failure only when it is more than three times what the page says)
       if (said && (loadMs / 1000 > 1.25 * +said[2] || loadMs / 1000 < 0.5 * +said[2])) console.log(`NOTE Julia: the page says about ${said[2]} s, this machine took ${(loadMs / 1000).toFixed(1)} s`);
+      if (said && loadMs / 1000 > 3 * +said[2]) fail(`Julia: the page says about ${said[2]} s, the load took ${(loadMs / 1000).toFixed(1)} s`);
     }
     const mem = await page.evaluate(() => window.playgroundMemory());
     console.log(`Julia memory after the first run: wasm linear memory ${(mem.wasm / 1048576).toFixed(0)} MiB, image held by the worker ${(mem.image / 1048576).toFixed(1)} MiB, browser processes ${chromiumRssMB().toFixed(0)} MB resident (${before.toFixed(0)} MB before, peak ${peak.toFixed(0)} MB)`);
@@ -927,6 +930,50 @@ async function juliaChecks(name) {
     await page.waitForSelector(DONE, { timeout: 120000 });
     cells = await codeState(page);
     if (!/UndefVarError/.test(cells[0].out)) fail('a variable of an earlier Julia run is still there: ' + JSON.stringify(cells));
+
+    // 1d. A replacement owed while a call is in flight. The worker that has run
+    // Julia is replaced (it must not boot a second kernel), but not while an edit
+    // is pending: it is made when the worker goes idle, or before the next run,
+    // whichever comes first. A burst of calls is kept in flight while the run ends
+    // (the worker's reply to them comes after its "recycle" message), and runs
+    // follow at once: every one must work, and the replacement must have happened.
+    const replaced = () => page.evaluate(() => window.playgroundRecycles || 0);
+    const rec0 = await replaced();
+    const w1 = await page.evaluate(() => window.playgroundWorkers);
+    for (const n of [1, 2, 3]) {
+      await page.evaluate(() => {
+        window.burst = setInterval(() => {
+          for (let i = 0; i < 10; i++) window.playgroundCall('parse', { markdown: '```go\n1\n```\n' }).catch(() => {});
+        }, 1);
+      });
+      await openFile(page, `busy${n}.md`, '```julia\nstruct Q\n    x::Int\nend\nQ(7).x\n```\n');
+      await page.waitForSelector(DONE, { timeout: 120000 });
+      await page.evaluate(() => clearInterval(window.burst));
+      cells = await codeState(page);
+      if (cells.length !== 1 || cells[0].out !== '7') fail(`Julia run ${n} with calls in flight: ` + JSON.stringify(cells));
+    }
+    await page.waitForFunction((n) => (window.playgroundRecycles || 0) > n, rec0, { timeout: 90000 }).catch(() => fail('the Julia worker was never replaced after runs with calls in flight'));
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
+
+    // 1e. A Go-only run after a Julia run does not reboot Julia: no replacement, no
+    // new fetch, and as fast as a Go run is (the worker, replaced after the Julia
+    // run, holds a kernel nobody used).
+    await page.evaluate(() => window.playgroundMemory()); // answers when the new worker is ready
+    const r1 = await replaced();
+    const j1 = juliaRequests.length;
+    const tg = Date.now();
+    await openFile(page, 'go-only.md', '```go\n6 * 7\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    const goMs = Date.now() - tg;
+    cells = await codeState(page);
+    await new Promise((r) => setTimeout(r, 3000));
+    console.log(`Julia then a Go-only run: ${goMs} ms, replacements ${(await replaced()) - r1}, new Julia fetches ${juliaRequests.length - j1}`);
+    if (cells[0].out !== '42' || goMs > 5000) fail(`a Go-only run after Julia: ${goMs} ms ` + JSON.stringify(cells));
+    if ((await replaced()) !== r1 || juliaRequests.length !== j1) fail('a Go-only run after a Julia run rebooted Julia');
+    await openFile(page, 'after-go.md', '```julia\n1 + 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 120000 });
+    cells = await codeState(page);
+    if (cells[0].out !== '2') fail('a Julia run after the Go-only run: ' + JSON.stringify(cells));
 
     // 2. The cells of one run, each on the same worker.
     const run = async (src, extra = '') => {

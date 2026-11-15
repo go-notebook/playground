@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-embedded-julia/julia/interp"
 )
@@ -90,6 +91,13 @@ func takeKernel() (*interp.Kernel, error) {
 	return loader()
 }
 
+// used is set once a Julia cell has run in this process: it can boot no other
+// kernel safely (go-embedded-julia#92), and the page replaces the worker.
+var used atomic.Bool
+
+// JuliaUsed reports whether a Julia cell has run in this process.
+func JuliaUsed() bool { return used.Load() }
+
 // closeJulia ends the session's kernel: each run is a session of its own, with
 // a Main of its own (a struct redefined by a second run would be an error in
 // the first one's).
@@ -113,6 +121,7 @@ func (s *session) jCell(src string) (output string, shown []map[string]string, e
 			return "", nil, "the Julia kernel could not start: " + err.Error()
 		}
 		s.j = &jSide{k: k}
+		used.Store(true)
 	}
 	res := s.j.k.EvalWith(context.Background(), src, juliaOptions())
 	output = res.Stdout + res.Stderr

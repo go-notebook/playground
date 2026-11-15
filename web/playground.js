@@ -74,8 +74,17 @@
   let juliaDown = null;
   // juliaLoading is the note on a Julia cell while its core loads.
   let juliaLoading = null;
-  // recycling marks the next worker start as a planned replacement.
+  // recycling marks the next worker start as a planned replacement; recycleWanted
+  // says the Julia worker has run Julia and owes one (see 'recycle' below).
   let recycling = false;
+  let recycleWanted = false;
+  function maybeRecycle(force) {
+    if (!recycleWanted || engine !== 'julia' || (!force && (pending.size > 0 || running))) return;
+    recycleWanted = false;
+    recycling = true;
+    setStatus('Restarting Julia for a fresh kernel (about 10 s)…');
+    restart('julia');
+  }
   let queue = [];
   const pending = new Map();
   let nextId = 1;
@@ -91,6 +100,7 @@
     if (recycling) window.playgroundRecycles = (window.playgroundRecycles || 0) + 1;
     else window.playgroundWorkers = (window.playgroundWorkers || 0) + 1;
     recycling = false;
+    recycleWanted = false; // a new worker owes nothing
     ready = false;
     fatal = null;
     updateBadges();
@@ -121,12 +131,11 @@
         // The Julia worker has run Julia, so it is replaced, while nothing waits
         // for it, by a new instance with a fresh kernel (a kernel that has run code
         // cannot be followed by another in one instance, and each boot keeps about
-        // a GiB). The next Run waits for what is left of its load.
-        if (pending.size === 0 && !running) {
-          recycling = true;
-          setStatus('Restarting Julia for a fresh kernel (about 10 s)…');
-          restart('julia');
-        }
+        // a GiB). The next Run waits for what is left of its load. If something is
+        // in flight (an edit being typed), the replacement is owed: it is made when
+        // the worker goes idle, or before the next run, whichever comes first.
+        recycleWanted = true;
+        maybeRecycle();
         return;
       }
       if (m.type === 'downloading') {
@@ -181,6 +190,7 @@
         p.reject(err);
         stop();
       } else p.resolve(m);
+      setTimeout(maybeRecycle, 0); // a replacement owed while this call was in flight
     };
   }
 
@@ -327,6 +337,9 @@
   }
   window.playgroundLangName = langName; // for web/test/page.mjs
   // What the core holds, for web/test/page.mjs: {wasm, image} in bytes.
+  // A call to the core, as an edit is: for web/test/page.mjs, which keeps one in
+  // flight while a run ends.
+  window.playgroundCall = (op, payload) => call(op, payload);
   window.playgroundMemory = async () => JSON.parse((await call('memory', {})).json);
 
   // ---- The notebook -----------------------------------------------------
@@ -1017,6 +1030,9 @@
     setStatus(ready ? 'Running…' : 'Waiting for the Go runtime…');
     try {
       await edit(null);
+      // A replacement still owed goes before this run, whatever is in flight: the
+      // run would otherwise boot a second kernel in the instance that has run Julia.
+      maybeRecycle(true);
       const code = nb.cells.filter((c) => c.kind === 'code');
       let upTo = last === undefined || last < 0 ? code.length - 1 : Math.min(last, code.length - 1);
       // A run the page starts itself (a notebook opened, an example chosen, a

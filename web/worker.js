@@ -192,7 +192,9 @@ onmessage = (e) => {
           ? self.playgroundEdit(markdown, JSON.stringify(ops))
           : self.playgroundRun(markdown, typeof last === 'number' ? last : -1);
     postMessage({ type: 'result', id, json, ms: performance.now() - t });
-    if (julia && op === 'run') {
+    if (julia && op === 'run' && self.playgroundJuliaUsed()) {
+      // (Only a run that executed a Julia cell: a Go-only run leaves the kernel
+      // waiting in this instance, which is as good as new.)
       // This instance has run Julia: it never boots another kernel. A kernel that
       // has run code mutates process-wide type state in go-embedded-julia, and a
       // later LoadKernel in the same process can fail ("image is malformed"); and
