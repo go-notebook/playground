@@ -25,11 +25,11 @@ jobs:
           # no loading carousel, 2026-11-15; this check fails on both): add
           # them here once their Pages deploys are redone.
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
       - name: Install Playwright and Chromium
         working-directory: web/test
-        run: npm install && npx playwright install --with-deps chromium
+        run: npm ci && npx playwright install --with-deps chromium
       - run: node web/test/page.mjs ${{ matrix.url }}

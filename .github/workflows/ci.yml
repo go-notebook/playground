@@ -88,7 +88,7 @@ jobs:
           go run ./cmd/build -o site/notebook --org go-notebook examples/notebook/*.md
       - name: Install Playwright and Chromium
         working-directory: web/test
-        run: npm install && npx playwright install --with-deps chromium
+        run: npm ci && npx playwright install --with-deps chromium
       - run: node web/test/page.mjs site/statistics
       - run: node web/test/page.mjs site/numerics
       - run: node web/test/page.mjs site/notebook

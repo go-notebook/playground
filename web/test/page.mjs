@@ -18,6 +18,9 @@ import path from 'node:path';
 import os from 'node:os';
 
 const withEditor = process.argv.includes('--editor');
+// a deployed page (or --editor) has the code editor, and must be driven through
+// it: a textarea is then a failure, a broken editor that fell back must not pass
+const expectEditor = withEditor || /^https?:/.test(process.argv.slice(2).find((a) => !a.startsWith('--')) || '');
 const target = process.argv.slice(2).find((a) => !a.startsWith('--'));
 if (!target) {
   console.error('usage: node page.mjs [--editor] <directory | url>');
@@ -532,6 +535,32 @@ const codeState = (page) =>
 // every change to it).
 // (The expression is written out where it is used: it runs in the page.)
 
+// EXPECTED TO FAIL, go-notebook/playground#40: Shift+Enter sent right after
+// the first keystroke into a new cell, while the focus is still on the
+// editor's a11y mirror, inserts a line break into the cell although the page
+// prevented the key. This reproduces it with no wait. It reproduces on most
+// runs, so up to 3 are tried; the check passes (XFAIL) when one does, and
+// FAILS when none does, which means the bug was fixed (or this no longer
+// reaches it): then drop this check and the wait in editingChecks.
+async function shiftEnterRace(page) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await openFile(page, 'race.md', '```go\nx := 1\n```\n');
+    await waitDone(page);
+    await page.click('#add-end');
+    await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
+    await page.waitForFunction(() => document.activeElement.hasAttribute('data-webcanvas-mirror'), null, { timeout: 10000 });
+    await page.keyboard.type('x * 2');
+    await page.keyboard.press('Shift+Enter'); // no wait
+    await page.waitForTimeout(1000);
+    const text = await page.evaluate(() => [...document.querySelectorAll('#notebook .cell[data-lang]')].pop().querySelector('textarea').value);
+    if (text === 'x * 2\n') {
+      console.log(`XFAIL (#40): Shift+Enter with no wait inserted a line break (attempt ${attempt})`);
+      return;
+    }
+  }
+  fail('playground#40 did not reproduce in 3 attempts: Shift+Enter no longer inserts a line break (fixed? remove this expected-to-fail check)');
+}
+
 // A visitor adds a Ruby cell, types into it, runs it, makes it Go, deletes
 // and brings it back, moves it, and downloads the notebook, which reads back
 // byte for byte; all from the + control, the cell's own controls and
@@ -542,8 +571,20 @@ async function editingChecks(page) {
   await waitDone(page);
   // a deployed page, or --editor, has the code editor: say so, so that a page
   // that lost it (or a test that no longer reaches it) is a failure, not a pass
-  if (withEditor || !server) {
-    const up = await page.waitForFunction(() => window.playgroundEditor && [...window.playgroundEditor.surfaces].some((s) => s.mounted), null, { timeout: 120000 }).then(() => true, () => false);
+  if (expectEditor) {
+    // every code cell on a canvas and none on a text area (the notebook is
+    // short: no cell is off screen, where the page shows its textarea)
+    const up = await page
+      .waitForFunction(
+        () => {
+          const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
+          const mounted = window.playgroundEditor ? [...window.playgroundEditor.surfaces].filter((s) => s.mounted).length : 0;
+          return cells.length > 0 && mounted >= cells.length && cells.every((c) => c.querySelector('canvas') && !c.querySelector('textarea').offsetParent);
+        },
+        null,
+        { timeout: 120000 }
+      )
+      .then(() => true, () => false);
     if (!up) fail('the code editor did not load: the cells are still text areas');
     else console.log('code editor: on its canvases, cells edited through its text layer');
   }
@@ -563,11 +604,11 @@ async function editingChecks(page) {
   console.log('add menu: ' + kinds.join(', '));
   if (kinds.join() !== 'Go (as above),Fortran,R,Ruby,C · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
-  await page.waitForFunction(() => {
+  await page.waitForFunction((ed) => {
     const a = document.activeElement;
-    const keys = !!a && (a.tagName === 'TEXTAREA' || a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror'));
+    const keys = !!a && (ed ? a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror') : a.tagName === 'TEXTAREA');
     return keys && a.closest('.cell').dataset.lang === 'ruby';
-  });
+  }, expectEditor);
   const mode = await page.evaluate(() => document.activeElement.closest('.cell').querySelector('.mode').textContent);
   if (!/^editing/.test(mode)) fail('a cell being edited does not say so: ' + mode);
   await page.keyboard.type('x * 2');
@@ -576,7 +617,10 @@ async function editingChecks(page) {
   // text layer, about 100-200 ms later; a Shift+Enter that lands before that
   // inserts a line break (a person does not type that fast; the typed text is
   // not at risk). Wait for the layer, as browsertest/ does.
-  await page.waitForFunction(() => !document.activeElement.hasAttribute('data-webcanvas-mirror'));
+  await page.waitForFunction((ed) => {
+    const a = document.activeElement;
+    return !!a && (ed ? a.hasAttribute('data-webcanvas-layer') : a.tagName === 'TEXTAREA');
+  }, expectEditor);
   await page.keyboard.press('Shift+Enter'); // run it, and move on
   await waitDone(page);
   let cells = await codeState(page);
@@ -603,11 +647,14 @@ async function editingChecks(page) {
   // B adds a cell below in the language above, Esc selects it, D D deletes it
   await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
   await page.keyboard.press('b');
-  await page.waitForFunction((s) => {
-    const a = document.activeElement;
-    const keys = !!a && (a.tagName === 'TEXTAREA' || a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror'));
-    return document.querySelectorAll(s).length === 3 && keys;
-  }, CODE_CELLS);
+  await page.waitForFunction(
+    ([s, ed]) => {
+      const a = document.activeElement;
+      const keys = !!a && (ed ? a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror') : a.tagName === 'TEXTAREA');
+      return document.querySelectorAll(s).length === 3 && keys;
+    },
+    [CODE_CELLS, expectEditor]
+  );
   await page.keyboard.press('Escape');
   await page.keyboard.press('d');
   await page.keyboard.press('d');
@@ -880,6 +927,7 @@ try {
   }
 
   await editingChecks(page);
+  if (expectEditor) await shiftEnterRace(page);
   await limitChecks();
   await rLimitChecks();
   await fortranLimitChecks();
