@@ -519,6 +519,9 @@ async function fortranLimitChecks() {
     nestedEnd = 'end if\nend do\n' + nestedEnd;
   }
   const heavy = `module m\ncontains\nrecursive function f(k) result(r)\ninteger :: k, r, ${decls.join(', ')}\nr = 0\nif (k > 0) then\n${nested}select case (k)\ncase default\nr = ${'('.repeat(20)}f(k - 1)${')'.repeat(20)} + 1\nend select\n${nestedEnd}end if\nend function\nend module`;
+  // keep() makes a local array of 2^25 integers (256 MiB counted); with
+  // pointer, a module pointer is left associated with it
+  const aliasBomb = (pointer) => '```fortran\nmodule m\ninteger, pointer :: p(:)\ncontains\nsubroutine keep()\ninteger, target :: a(2**25)\n' + (pointer ? 'p => a\n' : '') + 'end subroutine\nend module\n```\n```fortran\nuse m\ncall keep()\n```\n```fortran\ninteger, allocatable :: b(:)\nallocate(b(2**25))\nprint *, size(b)\n```\n```fortran\nprint *, 1\n```\n';
   const hard = [
     ['deep recursion, 13 DO/IF pairs per frame, infinite', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
     ['deep recursion, 13 DO/IF pairs per frame, 45 deep still runs', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(45)\n```\n', /^45$/, 1, true],
@@ -531,6 +534,11 @@ async function fortranLimitChecks() {
     ['deep recursion, 150 deep still runs', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(150)\n```\n', /^150$/, 1, true],
     ['memory bomb, two 2^27 arrays', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**27))\nallocate(b(2**27))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
     ['memory bomb, one 2^28 array', '```fortran\ninteger, allocatable :: a(:)\nallocate(a(2**28))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+    // a module pointer to a procedure's local array keeps it alive after the
+    // return: its 256 MiB stay counted (fortran v0.29.0 moves the charge to the
+    // heap; v0.27.0 credited it and let the next 256 MiB through)
+    ['memory bomb, a local array kept by a module pointer', aliasBomb(true), /memory limit exceeded/, 2],
+    ['the same local array with no pointer to it is credited', aliasBomb(false), /^33554432$/, 2, true],
   ];
   for (const [what, md, want, idx, ok] of hard) {
     const workers = await page.evaluate(() => window.playgroundWorkers);
