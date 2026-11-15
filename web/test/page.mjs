@@ -458,16 +458,20 @@ async function fortranLimitChecks() {
     ['endless DO WHILE', 'logical :: t = .true.\ndo while (t)\nend do', /step|ran longer than/],
     ['nested DO, 10^10 iterations', 'integer :: i, j, s\ns = 0\ndo i = 1, 100000\n  do j = 1, 100000\n    s = s + 1\n  end do\nend do', /step|ran longer than/],
   ];
+  let base = null;
   for (const [what, src, want] of cases) {
     const t0 = Date.now();
-    const workers = await page.evaluate(() => window.playgroundWorkers);
+    // The first case loads the second core, which starts its worker; the
+    // count is taken after it, and no later run may start another.
+    const workers = base === null ? null : await page.evaluate(() => window.playgroundWorkers);
     await openFile(page, `fortran-${what}.md`, '```fortran\n' + src + '\n```\n```fortran\nprint *, 1\n```\n');
     await page.waitForSelector(DONE, { timeout: 60000 });
     const cells = await codeState(page);
     console.log(`Fortran ${what} (${Date.now() - t0} ms): ` + JSON.stringify(cells[0].out.slice(0, 100)));
     if (!want.test(cells[0].out) || /worker was killed/.test(cells[0].out)) fail(`Fortran ${what}: a runaway cell was not stopped by the evaluator: ` + JSON.stringify(cells));
     if (!/Not run: a cell above failed/.test(cells[1].out)) fail(`Fortran ${what}: the cell after the stopped one should be skipped: ` + JSON.stringify(cells));
-    if ((await page.evaluate((w) => window.playgroundWorkers - w, workers)) !== 0) fail(`Fortran ${what}: the core was restarted`);
+    if (workers !== null && (await page.evaluate((w) => window.playgroundWorkers - w, workers)) !== 0) fail(`Fortran ${what}: the core was restarted`);
+    base = 1;
     await openFile(page, `fortran-after-${what}.md`, '```fortran\ninteger :: k = 6\nprint *, k * 7\n```\n```go\n1 + 1\n```\n');
     await waitDone(page);
     const after = await codeState(page);
