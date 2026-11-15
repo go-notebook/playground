@@ -115,6 +115,9 @@ func TestFortranHeapBombIsRefused(t *testing.T) {
 		"accumulation":        "integer, allocatable :: a(:), b(:)\nallocate(a(2**25))\nallocate(b(2**25))\n",
 		"array component":     "type :: t\nreal(8) :: x(8000)\nend type\ntype(t) :: a(100000)\n",
 		"character component": "type :: u\ncharacter(len=1048576) :: c\nend type\ntype(u) :: a(2000)\n",
+		// go-notebook's review of #38: an array constructor's elements were not
+		// charged before go-embedded-fortran v0.24.2 (assigned, so it is built)
+		"array constructor": "integer :: b(1000000), j\ninteger, allocatable :: c(:)\nb = 1\nc = [(b, j = 1, 268)]\n",
 	} {
 		res := Run("```fortran\n" + src + "```\n```fortran\nprint *, 1\n```\n")
 		if !strings.Contains(res[0].Error, "memory limit exceeded") || !res[1].Skipped {
