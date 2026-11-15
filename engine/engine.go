@@ -55,7 +55,7 @@ type Result struct {
 	// Error is why the cell failed, with the line in the cell.
 	Error string `json:"error,omitempty"`
 	// Status says why a cell has an Error that is not a failure: StatusNotRun
-	// for a Julia cell that parsed and checked but is not run by design, and
+	// for a cell of a check-only language (C) that parsed and checked, and
 	// StatusBlocked for a cell that reads what one defines. Empty for a cell
 	// that ran, and for a cell that failed (Error alone).
 	Status string `json:"status,omitempty"`
@@ -68,11 +68,11 @@ type Result struct {
 
 // The Status values of a Result.
 const (
-	// StatusNotRun is a Julia cell that parsed and checked: it is not run, by
-	// design, until go-embedded-julia has a runtime. It is not a failure.
+	// StatusNotRun is a cell of a check-only language (C) that parsed and
+	// checked: it is not run, by design. It is not a failure.
 	StatusNotRun = "notrun"
-	// StatusBlocked is a cell that reads a variable a Julia cell defines, so
-	// it waits for that cell. It is not a failure.
+	// StatusBlocked is a cell that reads a variable a cell of a check-only
+	// language defines, so it waits for that cell. It is not a failure.
 	StatusBlocked = "blocked"
 )
 
@@ -140,9 +140,9 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			out[i].Skipped = true
 			continue
 		}
-		// A cell of a check-only language (Julia, R, C) is checked, never
-		// run, and so are the cells that read it: each says why, and the
-		// others run.
+		// A cell of a check-only language (C) is checked, never run,
+		// and so are the cells that read it: each says why, and the others
+		// run.
 		if CheckOnly(c.Lang) {
 			msg, checked := chk.cell(i)
 			out[i].Error = msg
@@ -169,13 +169,27 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 		case analysis.Fortran:
 			// Fortran's modules and variables stay Fortran's (analysis.Isolated).
 			out[i].Output, out[i].Display, out[i].Error = s.fCell(c.Source)
+		case analysis.Julia:
+			// Julia is named here, so that its source never falls to the Go
+			// evaluator, whichever runtime the build has (julia.go, julia_off.go).
+			// Its syntax errors are the checker's, at their line and column;
+			// its variables stay Julia's in the page (they cross in go-notebook).
+			if msg := chk.syntax(i); msg != "" {
+				out[i].Error = msg
+			} else {
+				out[i].Output, out[i].Display, out[i].Error = s.jCell(c.Source)
+			}
 		default:
 			out[i].Output, out[i].Display, out[i].Error = s.cell(c.Source)
 			s.goDefines(c.Source)
 		}
+		if out[i].Error != "" {
+			out[i].Error += chk.crossNote(i)
+		}
 		out[i].Millis = float64(time.Since(start).Microseconds()) / 1000
 		failed = out[i].Error != ""
 	}
+	s.closeJulia()
 	return out
 }
 
@@ -196,6 +210,8 @@ type session struct {
 	r *rSide
 	// f is the Fortran side (fortran.go), made by the first Fortran cell.
 	f *fSide
+	// j is the Julia side (julia.go), made by the first Julia cell.
+	j *jSide
 }
 
 // goDefines records the variables a Go cell defines: what the notebook

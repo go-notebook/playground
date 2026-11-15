@@ -3,6 +3,7 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
+	github.com/go-embedded-julia/julia v0.17.0
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.40.3
 	github.com/go-notebook/notebook v0.20.0
@@ -89,6 +90,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a // indirect
+	github.com/go-bignum/bigfloat v0.2.0 // indirect
 	github.com/go-commonmark/commonmark v0.1.0 // indirect
 	github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 // indirect
 	github.com/go-composites/bag v0.0.0-20261017234052-8c0542744097 // indirect
@@ -101,7 +103,6 @@ require (
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-c/c v0.2.1 // indirect
 	github.com/go-embedded-fortran/fortran v0.24.1 // indirect
-	github.com/go-embedded-julia/julia v0.17.0 // indirect
 	github.com/go-embedded-r/r v0.17.1 // indirect
 	github.com/go-embedded-r/tre v0.1.3 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
@@ -130,6 +131,7 @@ require (
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
 	github.com/go-regexp/engine v0.4.2 // indirect
+	github.com/go-regexp/pcre2 v0.1.0 // indirect
 	github.com/go-richdoc/richdoc v0.7.0 // indirect
 	github.com/go-rouge/rouge v0.9.0 // indirect
 	github.com/go-ruby-aasm/aasm v0.0.0-20261025185733-ae3deccc721d // indirect

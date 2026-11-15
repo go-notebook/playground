@@ -1,7 +1,15 @@
 == cell 0 (line 8)
 == cell 1 (line 14)
--- notrun
-Julia cells run in go-notebook, not yet in the browser
-== cell 2 (line 21)
+-- show
+55
+== cell 2 (line 24)
+-- output
+squares: [1, 4, 9]
+-- show
+14
+== cell 3 (line 30)
+-- output
+the sum of the squares is 14
+== cell 4 (line 36)
 -- show
 20

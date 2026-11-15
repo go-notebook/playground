@@ -143,6 +143,7 @@ func TestCoreURL(t *testing.T) {
 // written; the page carries each example's Markdown, as written.
 func TestNotebookSize(t *testing.T) {
 	log := quiet(t)
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	big := filepath.Join(t.TempDir(), "big.md")
 	if err := os.WriteFile(big, []byte(strings.Repeat("a", engine.MaxNotebook+1)), 0o644); err != nil {
@@ -167,6 +168,7 @@ func TestNotebookSize(t *testing.T) {
 // The build fails, and writes no page, when the carousel cannot be made.
 func TestBuildCarouselError(t *testing.T) {
 	log := quiet(t)
+	fakeImage(t)
 	seam(t, &goCmd, fakeGo(fakeRoot(t)))
 	seam(t, &runCell, func(string) []engine.Result { return nil })
 	out := t.TempDir()

@@ -10,6 +10,16 @@
   const examples = JSON.parse($('examples-data').textContent);
   // The URL of each core, with a hash of its bytes in it (cmd/build).
   const cores = JSON.parse($('cores-data').textContent);
+  // The Julia image the third core boots from (cmd/build): {url, size, rawSize,
+  // digest, coreSize}. Both are fetched only when a Julia cell is run.
+  const juliaAsset = JSON.parse($('julia-data').textContent);
+  // What loading Julia costs, as measured in headless Chromium on a laptop (page.mjs
+  // measures it again and fails when these drift by more than a quarter): the
+  // download, the third core and the compressed image, in MB over the wire; and
+  // the seconds to download them on a fast link, decode the image and boot the
+  // kernel.
+  const JULIA_DOWNLOAD_MB = 28;
+  const JULIA_LOAD_S = 20;
   const article = $('notebook');
   const status = $('status');
   const runButton = $('run');
@@ -26,7 +36,7 @@
 
   // Timings, in milliseconds since the page started loading
   // (performance.now()), for the status line and for tests.
-  const timings = (window.playgroundTimings = { runtimeReady: null, firstResult: null, rubyReady: null, firstRubyResult: null });
+  const timings = (window.playgroundTimings = { runtimeReady: null, firstResult: null, rubyReady: null, firstRubyResult: null, juliaReady: null, firstJuliaResult: null });
 
   // ---- The loading carousel ---------------------------------------------
 
@@ -53,9 +63,28 @@
 
   let worker = null;
   let ready = false;
-  // engine is the core the worker runs: 'go', or 'ruby' — the core with
-  // Ruby cells too, much larger, loaded only for a notebook that has one.
+  // engine is the core the worker runs: 'go'; 'ruby', the core with Ruby, R
+  // and Fortran cells too, much larger, loaded only for a notebook that has
+  // one; or 'julia', the third, which adds Julia's interpreter (and a 25 MB
+  // image), loaded only when a Julia cell is run.
   let engine = 'go';
+  // juliaDown is why the Julia core could not start (out of memory, network),
+  // once it failed: the notebook then runs in the other cores, and a Julia cell
+  // says why it did not run. Reloading the page tries again.
+  let juliaDown = null;
+  // juliaLoading is the note on a Julia cell while its core loads.
+  let juliaLoading = null;
+  // recycling marks the next worker start as a planned replacement; recycleWanted
+  // says the Julia worker has run Julia and owes one (see 'recycle' below).
+  let recycling = false;
+  let recycleWanted = false;
+  function maybeRecycle(force) {
+    if (!recycleWanted || engine !== 'julia' || (!force && (pending.size > 0 || running))) return;
+    recycleWanted = false;
+    recycling = true;
+    setStatus('Restarting Julia for a fresh kernel (about 10 s)…');
+    restart('julia');
+  }
   let queue = [];
   const pending = new Map();
   let nextId = 1;
@@ -66,16 +95,49 @@
   let overLimit = false;
 
   function startWorker() {
-    window.playgroundWorkers = (window.playgroundWorkers || 0) + 1; // for the browser test
+    // for the browser test: workers started, and apart from them the Julia
+    // worker's planned replacements (see the 'recycle' message)
+    if (recycling) window.playgroundRecycles = (window.playgroundRecycles || 0) + 1;
+    else window.playgroundWorkers = (window.playgroundWorkers || 0) + 1;
+    recycling = false;
+    recycleWanted = false; // a new worker owes nothing
     ready = false;
     fatal = null;
     updateBadges();
     // ?engine= is for a worker.js cached from before ?core=, which names the
     // core with a hash of its bytes (cmd/build).
-    const core = cores[engine === 'ruby' ? 'ruby' : 'go'];
-    worker = new Worker('worker.js?engine=' + (engine === 'ruby' ? 'ruby' : 'go') + (core ? '&core=' + encodeURIComponent(core) : ''));
+    const core = cores[engine];
+    let url = 'worker.js?engine=' + engine + (core ? '&core=' + encodeURIComponent(core) : '');
+    if (engine === 'julia') {
+      url += `&image=${encodeURIComponent(juliaAsset.url)}&imageRaw=${juliaAsset.rawSize}&coreRaw=${juliaAsset.coreSize}`;
+    }
+    worker = new Worker(url);
     worker.onmessage = (e) => {
       const m = e.data;
+      if (m.type === 'progress') {
+        juliaNote(`Loading Julia (~${JULIA_DOWNLOAD_MB} MB, about ${JULIA_LOAD_S} s)… ${Math.round(m.fraction * 100)}%`);
+        return;
+      }
+      if (m.type === 'starting') {
+        juliaNote('Starting the Julia kernel (a few seconds)…');
+        return;
+      }
+      if (m.type === 'warming') {
+        if (running) setStatus('Preparing a fresh Julia kernel…');
+        return;
+      }
+      if (m.type === 'warmed') return;
+      if (m.type === 'recycle') {
+        // The Julia worker has run Julia, so it is replaced, while nothing waits
+        // for it, by a new instance with a fresh kernel (a kernel that has run code
+        // cannot be followed by another in one instance, and each boot keeps about
+        // a GiB). The next Run waits for what is left of its load. If something is
+        // in flight (an edit being typed), the replacement is owed: it is made when
+        // the worker goes idle, or before the next run, whichever comes first.
+        recycleWanted = true;
+        maybeRecycle();
+        return;
+      }
       if (m.type === 'downloading') {
         if (carousel) carousel.downloading();
         return;
@@ -89,6 +151,7 @@
         carouselOver();
         if (timings.runtimeReady === null) timings.runtimeReady = performance.now();
         if (engine === 'ruby' && timings.rubyReady === null) timings.rubyReady = performance.now();
+        if (engine === 'julia' && timings.juliaReady === null) timings.juliaReady = performance.now();
         runButton.disabled = false;
         updateBadges();
         for (const q of queue) worker.postMessage(q);
@@ -99,6 +162,11 @@
       }
       if (m.type === 'fatal') {
         carouselOver(); // the wait is over: the status line says why
+        if (engine === 'julia') {
+          // Only Julia did not start: the other languages are unaffected.
+          juliaFailed(m.error);
+          return;
+        }
         fatal = m.error;
         updateBadges();
         setStatus('The Go runtime did not start: ' + m.error);
@@ -122,6 +190,7 @@
         p.reject(err);
         stop();
       } else p.resolve(m);
+      setTimeout(maybeRecycle, 0); // a replacement owed while this call was in flight
     };
   }
 
@@ -176,23 +245,70 @@
   // the default core leaves out).
   const needsRubyCore = (cells) => cells.some((c) => c.kind === 'code' && language(c.lang)?.core === 'ruby');
 
-  // ensureEngine switches to the Ruby core when the cells hold a cell of a
-  // language only it has, once: a visitor who runs only Go never downloads
-  // it. It reports whether they do.
-  function ensureEngine(cells) {
-    const needed = needsRubyCore(cells);
-    if (needed && engine !== 'ruby') {
-      engine = 'ruby';
-      worker.terminate();
-      for (const p of pending.values()) p.reject(new Error('stopped'));
-      pending.clear();
-      queue = [];
-      startWorker();
-      const second = cells.map((c) => c.kind === 'code' && language(c.lang)).filter((l) => l && l.core === 'ruby');
-      const first = second.find((l) => l.runs) ?? second[0];
+  // needsJuliaCore reports whether cells need the third core: a Julia cell,
+  // which only it runs. The page asks it of the cells a run covers, never of
+  // a notebook it merely opens: a visitor who reads a Julia example, or runs
+  // the cells above its Julia cells, downloads nothing for them.
+  const needsJuliaCore = (cells) => cells.some((c) => c.kind === 'code' && language(c.lang)?.core === 'julia');
+
+  function restart(next) {
+    engine = next;
+    worker.terminate();
+    for (const p of pending.values()) p.reject(new Error('stopped'));
+    pending.clear();
+    queue = [];
+    startWorker();
+  }
+
+  // ensureEngine switches to the core the cells need, once: the second one when
+  // they hold a cell of a language only it has (Ruby, R, Fortran), the third,
+  // which has those too, when they hold a Julia cell. A core already loaded is
+  // never left for a smaller one, and the third is not tried again after it
+  // failed (juliaDown). It reports whether the cells need a core beyond Go's.
+  function ensureEngine(cells, running) {
+    const julia = running && needsJuliaCore(cells) && juliaDown === null;
+    // To open a notebook the second core suffices for every language but Julia,
+    // whose cells are only shown until one is run.
+    const second = needsRubyCore(cells) || julia;
+    if (julia && engine !== 'julia') {
+      restart('julia');
+      const first = cells.find((c) => c.kind === 'code' && language(c.lang)?.core === 'julia');
+      juliaNote(`Loading Julia (~${JULIA_DOWNLOAD_MB} MB, about ${JULIA_LOAD_S} s)…`, first);
+      setStatus('Loading Julia…');
+    } else if (second && engine === 'go') {
+      restart('ruby');
+      const langs = cells.map((c) => c.kind === 'code' && language(c.lang)).filter((l) => l && l.core === 'ruby');
+      const first = langs.find((l) => l.runs) ?? langs[0];
       setStatus(`Loading the ${first.label} ${first.runs ? 'runtime' : 'parser'}…`);
     }
-    return needed;
+    return second;
+  }
+
+  // juliaNote writes what the Julia core is doing on the first Julia cell of
+  // the run, where its output will be: in the neutral style, since a wait is
+  // not a failure. The cell is given the first time; the next notes find it.
+  function juliaNote(text, cell) {
+    if (cell && cell.el) juliaLoading = cell.el.out;
+    if (!juliaLoading) return;
+    juliaLoading.textContent = '';
+    juliaLoading.append(pre(text, 'skipped'));
+    setStatus(text);
+  }
+
+  // juliaFailed is the end of a Julia core that did not start: the first run
+  // that asked for it fails with the reason, and the cores that run the other
+  // languages take over.
+  function juliaFailed(reason) {
+    juliaDown = reason;
+    juliaLoading = null;
+    const err = new Error(reason);
+    err.julia = true;
+    worker.terminate();
+    for (const p of pending.values()) p.reject(err);
+    pending.clear();
+    queue = [];
+    engine = nb && needsRubyCore(nb.cells) ? 'ruby' : 'go';
+    startWorker();
   }
 
   let fatal = null;
@@ -201,7 +317,12 @@
     if (!l) return 'not run in this playground';
     if (!l.runs) return 'not runnable yet';
     if (fatal) return 'cannot run: the runtime did not start';
-    if (l.core !== engine && l.core !== 'go') return `waits for the ${l.label} runtime`;
+    if (l.core === 'julia') {
+      if (juliaDown !== null) return 'not run: the Julia runtime did not start';
+      if (engine !== 'julia') return `loads when run (~${JULIA_DOWNLOAD_MB} MB)`;
+      return ready ? '' : `loading the ${l.label} runtime…`;
+    }
+    if (l.core !== engine && l.core !== 'go' && engine !== 'julia') return `waits for the ${l.label} runtime`;
     if (!ready) return l.core === 'go' ? 'loading the runtime…' : `loading the ${l.label} runtime…`;
     return '';
   }
@@ -211,10 +332,15 @@
       if (c.kind !== 'code' || !c.el) continue;
       const s = langStatus(c.lang || 'go');
       c.el.status.textContent = s ? ' · ' + s : '';
-      c.el.badge.dataset.runnable = s ? 'no' : 'yes';
+      c.el.badge.dataset.runnable = s && !s.startsWith('loads when run') ? 'no' : 'yes';
     }
   }
   window.playgroundLangName = langName; // for web/test/page.mjs
+  // What the core holds, for web/test/page.mjs: {wasm, image} in bytes.
+  // A call to the core, as an edit is: for web/test/page.mjs, which keeps one in
+  // flight while a run ends.
+  window.playgroundCall = (op, payload) => call(op, payload);
+  window.playgroundMemory = async () => JSON.parse((await call('memory', {})).json);
 
   // ---- The notebook -----------------------------------------------------
 
@@ -228,7 +354,7 @@
 
   function load(name, markdown, cells, title) {
     nb = { name, example: examples.some((x) => x.name === name) ? name : null, title, markdown, cells, dirty: new Set(), annotated: new Set(), notes: new Map() };
-    if (worker) ensureEngine(cells);
+    if (worker) ensureEngine(cells, false);
     else if (needsRubyCore(cells)) engine = 'ruby';
     undo.length = 0;
     undoButton.hidden = true;
@@ -378,8 +504,8 @@
     const sel = nb.cells[e.focus] && nb.cells[e.focus].el && nb.cells[e.focus].el.select;
     if (sel) sel.focus();
     // the cell is checked and run again, as the cells above it are
-    if (lang === 'markdown') run();
-    else run(codeIndex(e.focus));
+    if (lang === 'markdown') run(undefined, false, true);
+    else run(codeIndex(e.focus), false, true);
   }
 
   // ---- Rendering --------------------------------------------------------
@@ -894,8 +1020,9 @@
   // run runs the notebook, or its code cells up to the code cell last (and
   // the cells above it: the playground keeps no values between runs and has
   // no dependency graph). Cells below last keep their results, marked stale.
-  async function run(last) {
+  async function run(last, retried, auto) {
     if (running) return;
+    let again = false; // the Julia core failed: run once more without it
     running = true;
     document.body.dataset.state = 'running';
     runButton.disabled = true;
@@ -903,10 +1030,40 @@
     setStatus(ready ? 'Running…' : 'Waiting for the Go runtime…');
     try {
       await edit(null);
+      // A replacement still owed goes before this run, whatever is in flight: the
+      // run would otherwise boot a second kernel in the instance that has run Julia.
+      maybeRecycle(true);
       const code = nb.cells.filter((c) => c.kind === 'code');
-      const upTo = last === undefined || last < 0 ? code.length - 1 : Math.min(last, code.length - 1);
-      for (const c of code) c.el.cell.classList.add('stale');
-      const hasRuby = ensureEngine(code.slice(0, upTo + 1));
+      let upTo = last === undefined || last < 0 ? code.length - 1 : Math.min(last, code.length - 1);
+      // A run the page starts itself (a notebook opened, an example chosen, a
+      // cell's language changed) stops short of the first Julia cell while the
+      // Julia core is not loaded: 26 MB are downloaded for a click on Run, not
+      // for a visit. The cells from there on say so.
+      const firstJulia = code.findIndex((c) => language(c.lang)?.core === 'julia');
+      let notedFrom = code.length;
+      if (auto && firstJulia >= 0 && firstJulia <= upTo && engine !== 'julia' && juliaDown === null) {
+        for (const c of code.slice(firstJulia, upTo + 1)) {
+          c.el.cell.classList.remove('stale');
+          c.el.meta.textContent = '';
+          c.el.out.textContent = '';
+          c.el.out.append(pre(
+            c.lang === 'julia'
+              ? `Not run yet: Run loads Julia (~${JULIA_DOWNLOAD_MB} MB, about ${JULIA_LOAD_S} s) and runs this cell.`
+              : 'Not run yet: Run runs the notebook, Julia cells included.',
+            'skipped'
+          ));
+        }
+        upTo = firstJulia - 1;
+        notedFrom = firstJulia;
+        if (upTo < 0) {
+          setStatus(`Press Run to run the notebook: its Julia cells load Julia (~${JULIA_DOWNLOAD_MB} MB, about ${JULIA_LOAD_S} s) first.`);
+          document.body.dataset.state = 'done';
+          return;
+        }
+      }
+      for (const c of code.slice(0, notedFrom)) c.el.cell.classList.add('stale');
+      const hasRuby = ensureEngine(code.slice(0, upTo + 1), true);
+      updateBadges();
       runningCell = -1;
       overLimit = false; // the limit is armed as each cell starts ('started')
       const reply = await call('run', { markdown: nb.markdown, last: upTo });
@@ -915,16 +1072,24 @@
       results.forEach((r, i) => code[i] && show(code[i].el, r));
       if (timings.firstResult === null) timings.firstResult = performance.now();
       if (hasRuby && timings.firstRubyResult === null) timings.firstRubyResult = performance.now();
+      if (engine === 'julia' && timings.firstJuliaResult === null && results.some((r, i) => code[i]?.lang === 'julia')) timings.firstJuliaResult = performance.now();
       const failed = results.find((r) => r.error && !r.status);
       setStatus(
         (failed ? 'A cell failed. ' : '') +
           `Ran ${results.length} cell${results.length === 1 ? '' : 's'} in ${fmtMs(reply.ms)}.` +
+          (juliaDown !== null && code.some((c) => c.lang === 'julia') ? ` Julia did not start (${juliaDown}); the other languages are unaffected.` : '') +
           ` Runtime ready ${fmtMs(timings.runtimeReady)}, first result ${fmtMs(timings.firstResult)} after the page started loading.`
       );
       document.body.dataset.state = 'done';
     } catch (err) {
       clearTimeout(watchdog);
-      if (overLimit) {
+      if (err.julia) {
+        // The Julia core did not start (out of memory, network): the cells that
+        // asked for it say why, and the run goes on in the cores that run the
+        // other languages, once.
+        again = !retried;
+        setStatus(`Julia did not start: ${err.message}. The other languages are unaffected; reload the page to try Julia again.`);
+      } else if (overLimit) {
         // The kernel's words for its --timeout.
         const code = nb.cells.filter((c) => c.kind === 'code');
         const c = code[runningCell];
@@ -940,7 +1105,8 @@
         if (c) {
           c.el.cell.classList.remove('stale');
           c.el.out.textContent = '';
-          c.el.out.append(pre(`stopped: the runtime failed on this cell (${err.message}), probably too deeply nested data; its worker was restarted and the notebook's other values are lost: run again`, 'error'));
+          const why = c.lang === 'julia' ? 'probably out of memory' : 'probably too deeply nested data';
+          c.el.out.append(pre(`stopped: the runtime failed on this cell (${err.message}), ${why}; its worker was restarted and the notebook's other values are lost: run again`, 'error'));
         }
         setStatus('Cell ' + (runningCell + 1) + ' made the runtime fail (' + err.message + '). The runtime restarts; run again when ready.');
       } else setStatus(err.message === 'stopped' ? 'Stopped. The runtime restarts; run again when ready.' : 'Error: ' + err.message);
@@ -950,7 +1116,9 @@
       stopButton.hidden = true;
       runButton.disabled = !ready;
       running = false;
+      juliaLoading = null;
     }
+    if (again) return run(last, true);
   }
 
   function show(el, r) {
@@ -985,9 +1153,13 @@
       }
       el.out.append(pre(d['text/plain']));
     }
-    // A Julia cell that is checked and not run, and a cell blocked on one,
-    // are not failures: the engine says so in status, in a neutral style.
-    if (r.error) el.out.append(pre(r.error, r.status === 'notrun' || r.status === 'blocked' ? 'skipped' : 'error'));
+    // A cell checked and not run (C), and a cell blocked on one, are not
+    // failures: the engine says so in status, in a neutral style. A Julia cell
+    // a core without the Julia runtime was given says why it did not run: the
+    // runtime did not start.
+    let error = r.error;
+    if (juliaDown !== null && /^this build does not run Julia cells/.test(error || '')) error = `Julia did not run: its runtime did not start (${juliaDown}). The other languages are unaffected; reload the page to try Julia again.`;
+    if (error) el.out.append(pre(error, r.status === 'notrun' || r.status === 'blocked' ? 'skipped' : 'error'));
   }
 
   // svgNode parses a figure, without scripts, event handlers, animations,
@@ -1148,7 +1320,7 @@
   window.addEventListener('hashchange', async () => {
     await edit(null); // the example being left keeps its edits
     await loadExample(decodeURIComponent(location.hash.slice(1)));
-    run();
+    run(undefined, false, true);
   });
   runButton.addEventListener('click', () => run());
   stopButton.addEventListener('click', stop);
@@ -1159,7 +1331,7 @@
     await edit(null);
     edited.delete(ex.name);
     await loadExample(ex.name);
-    run();
+    run(undefined, false, true);
   });
   $('download').addEventListener('click', async () => {
     await edit(null); // the file is the document as the core wrote it
@@ -1184,11 +1356,11 @@
     setStatus(ready ? 'Reading ' + file.name + '…' : 'Waiting for the Go runtime…');
     const reply = await call('parse', { markdown: text });
     load(file.name, text, JSON.parse(reply.json), file.name);
-    run();
+    run(undefined, false, true);
   });
 
   // The first notebook decides which core the worker starts with.
   loadExample(decodeURIComponent(location.hash.slice(1)));
   startWorker();
-  run();
+  run(undefined, false, true);
 })();

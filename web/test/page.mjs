@@ -16,6 +16,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import zlib from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 
 const withEditor = process.argv.includes('--editor');
 // a deployed page (or --editor) has the code editor, and must be driven through
@@ -64,6 +66,17 @@ if (!/^https?:/.test(target)) {
 
 // Playwright's own Chromium, or else the installed Chrome.
 const browser = await chromium.launch().catch(() => chromium.launch({ channel: 'chrome' }));
+// Every request any page of this run made for the Julia core or its image, the
+// workers' included (Playwright reports a worker's requests on its context).
+const juliaRequests = [];
+{
+  const newPage = browser.newPage.bind(browser);
+  browser.newPage = async (...a) => {
+    const p = await newPage(...a);
+    p.context().on('request', (r) => JULIA_FILES.test(r.url()) && juliaRequests.push(r.url()));
+    return p;
+  };
+}
 let failures = 0;
 const fail = (msg) => {
   console.log('FAIL ' + msg);
@@ -84,7 +97,13 @@ const slow = { worker: 0 };
 // A code cell's language badge (prose cells have one too, and so do the
 // fences in prose).
 const CODE_BADGES = '#notebook .cell[data-lang] .cell-head .lang-badge';
-const corePattern = /\/playground(-ruby)?\.wasm(\?.*)?$/;
+const corePattern = /\/playground(-ruby|-julia)?\.wasm(\?.*)?$/;
+// What a page asks of the network for Julia: the third core and its image. The
+// default core must never ask for either unless a Julia cell is run (it is
+// asserted below, on the requests of the page and of its workers).
+const JULIA_FILES = /\/(playground-julia\.wasm|julia-image-[^/]*\.bin\.gz)(\?|$)/;
+// What the page says loading Julia costs: "Loading Julia (~28 MB, about 20 s)…".
+const JULIA_NOTE = /Loading Julia \(~(\d+) MB, about (\d+) s\)/;
 async function holdCore(context) {
   // The worker first asks the browser's cache for the core (only-if-cached,
   // which fails at once when nothing is cached) and only then downloads it:
@@ -137,7 +156,8 @@ async function carouselChecks() {
     // While the core is held back, every cell's badge says it cannot run yet.
     const waiting = await page.$$eval(CODE_BADGES, (bs) => bs.map((b) => [b.dataset.runnable, b.textContent]));
     console.log('badges while the core downloads: ' + [...new Set(waiting.map((w) => w[1]))].join(' | '));
-    if (!waiting.length || !waiting.every(([r, t]) => r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime|not runnable yet)$/.test(t)))
+    // (A Julia cell is runnable: it loads Julia when run, which is not the wait for the core.)
+    if (!waiting.length || !waiting.every(([r, t]) => (r === 'no' && /· (loading the (Ruby )?runtime…|waits for the Ruby runtime|not runnable yet)$/.test(t)) || (r === 'yes' && /· loads when run \(~\d+ MB\)$/.test(t))))
       fail('a badge does not say its cell cannot run yet: ' + JSON.stringify(waiting));
     const label = await page.$eval('#lk-carousel', (s) => s.getAttribute('aria-label'));
     const n = await page.$$eval('#lk-carousel .lk-car-card', (cs) => cs.length);
@@ -284,10 +304,9 @@ async function carouselChecks() {
 
 // ---- The Julia and R examples ---------------------------------------------
 
-// The check-only languages, as their examples show them: the fence word, the
+// The check-only languages (C), as their examples show them: the fence word, the
 // badge's name, the start of the not-run message and the site the prose links.
 const CHECKED = {
-  Julia: { lang: 'julia', text: 'Julia cells run in go-notebook, not yet in the browser', site: 'https://go-embedded-julia.github.io/', error: /line 2:8: syntax error/ },
   C: { lang: 'c', text: 'C cells are not run yet', site: 'https://github.com/go-embedded-c/c', error: /line 2:11: unexpected identifier/ },
 };
 
@@ -318,8 +337,7 @@ async function checkedExampleChecks(page, name, label) {
   console.log(`${name}: ${label} example: ${own.length} ${label}, ${blocked.length} blocked, ${alone.length} independent`);
   if (!own.length || own.some((c) => !c.out.includes(text) || !c.notRunStyle || c.failStyle))
     fail(`${name}: a ${label} cell should say it is checked, not run, and not look failed: ` + JSON.stringify(own));
-  // Julia variables stay in Julia (go-notebook's analysis.Isolated): no cell is blocked on a Julia cell.
-  if (label !== 'Julia' && (!blocked.length || blocked.some((c) => !c.notRunStyle || c.failStyle)))
+  if (!blocked.length || blocked.some((c) => !c.notRunStyle || c.failStyle))
     fail(`${name}: no Go cell is blocked on the ${label} cell, or it looks failed: ` + JSON.stringify(r.cells));
   if (!alone.length) fail(`${name}: no Go cell runs independently of the ${label} cell: ` + JSON.stringify(r.cells));
   if (!/checked, not run/.test(r.prose) || !r.links.includes(site))
@@ -647,7 +665,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),Fortran,R,Ruby,C · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),Fortran,Julia,R,Ruby,C · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction((ed) => {
     const a = document.activeElement;
@@ -721,24 +739,21 @@ async function editingChecks(page) {
   console.log('round trip: ' + (again === moved ? 'byte for byte' : 'DIFFERS'));
   if (again !== moved) fail('download, open, download changed the file: ' + JSON.stringify(again));
 
-  // A cell switched to Julia is checked, not run; switched back, it is Go
-  // again. (x = 21 is Julia, and not Go: the text is never translated. The
-  // second cell reads nothing from the first: Julia variables stay in Julia in
-  // go-notebook's newer releases, so a reader of x would be blocked in v0.15.0
-  // and an undefined name after it, and the test holds under both.)
+  // A cell switched to Julia is not run by the page's own re-run (it would
+  // download Julia for an edit): it says it loads when run, and nothing is
+  // fetched. Switched back, it is Go again. (x = 21 is Julia, and not Go: the
+  // text is never translated.)
   await openFile(page, 'jl.md', '```go\nx = 21\n```\n```go\n2 * 21\n```\n');
   await waitDone(page);
   await settle(page);
   await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('julia');
   await waitDone(page);
-  await settle(page);
-  await page.click('#run');
-  await waitDone(page);
   cells = await codeState(page);
   console.log('after Go -> Julia: ' + JSON.stringify(cells.map((c) => [c.lang, c.out.slice(0, 50)])));
   const jbadge = await page.$eval(CODE_BADGES, (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
-  if (cells[0].lang !== 'julia' || jbadge !== 'Julia · not runnable yet' || !cells[0].out.includes('not yet in the browser'))
+  if (cells[0].lang !== 'julia' || !/^Julia · loads when run \(~\d+ MB\)$/.test(jbadge) || !/^Not run yet: Run loads Julia/.test(cells[0].out))
     fail('Go -> Julia: ' + jbadge + ' ' + JSON.stringify(cells));
+  if (juliaRequests.length) fail('an edit to Julia fetched the Julia core: ' + juliaRequests.join(' '));
   if ((await downloadBytes(page)).toString() !== '```julia\nx = 21\n```\n```go\n2 * 21\n```\n') fail('the Julia fence is not in the file');
   await settle(page);
   await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('go');
@@ -769,6 +784,316 @@ async function limitChecks() {
   const after = await codeState(page);
   if (after[0].out !== '2') fail('the run after the time limit: ' + JSON.stringify(after));
   await page.close();
+}
+
+// ---- Julia ----------------------------------------------------------------
+
+// The resident memory of every process of the browser this run started, in MB:
+// the renderer that holds the page and its worker is in it, with the 20 MB core,
+// the image, and the kernel's heap. Only a local run can say it.
+function chromiumRssMB() {
+  // The browser this process started is its child; every other process of it
+  // descends from that one (other sessions' browsers are not counted).
+  const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,rss='], { encoding: 'utf8' })
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/).map(Number))
+    .filter((r) => r.length === 3 && !r.some(Number.isNaN));
+  const mine = new Set(rows.filter(([, ppid]) => ppid === process.pid).map(([pid]) => pid));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [pid, ppid] of rows) {
+      if (!mine.has(pid) && mine.has(ppid)) {
+        mine.add(pid);
+        grew = true;
+      }
+    }
+  }
+  let kb = 0;
+  for (const [pid, , rss] of rows) if (mine.has(pid)) kb += rss;
+  return kb / 1024;
+}
+
+// juliaChecks runs a Julia cell, in a page that has run none: the cell says it
+// loads Julia (with the measured size and time), the cell runs and prints, the
+// REPL's soft scope gives 55, an exception shows Julia's own text, a cell that
+// spins is stopped by the kernel's timeout and not by killing the worker, the
+// next run works on the same worker, a Julia variable does not cross to Go
+// (and the cell says so), and the memory and the deep recursion are measured.
+// Then a page whose Julia image cannot be fetched: its cells say so, and the
+// other languages run.
+async function juliaChecks(name) {
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => fail('Julia page error: ' + e.message));
+  const ctx = page.context();
+  const wire = new Map();
+  ctx.on('requestfinished', async (req) => {
+    if (!JULIA_FILES.test(req.url())) return;
+    const sizes = await req.sizes().catch(() => null);
+    wire.set(path.basename(new URL(req.url()).pathname), sizes ? sizes.responseBodySize : 0);
+  });
+  let peak = chromiumRssMB();
+  const before = peak;
+  const sampler = setInterval(() => (peak = Math.max(peak, chromiumRssMB())), 500);
+  try {
+    await page.goto(new URL('#' + name, url).href);
+    await waitDone(page);
+    if (juliaRequests.length) fail('Julia: fetched before a Julia cell ran: ' + juliaRequests.join(' '));
+    const workers0 = await page.evaluate(() => window.playgroundWorkers);
+
+    // 1. Run: the note on the cell, then the cells.
+    const t0 = Date.now();
+    await settle(page);
+    await page.click('#run');
+    const note = await page
+      .waitForFunction(() => {
+        const o = document.querySelector('#notebook .cell[data-lang="julia"] .outputs');
+        return o && /Loading Julia/.test(o.textContent) ? o.textContent : null;
+      }, null, { timeout: 5000 })
+      .then((h) => h.jsonValue())
+      .catch(() => null);
+    const said = note && note.match(JULIA_NOTE);
+    if (!said) fail('Julia: the cell does not say it loads Julia, with its size and time: ' + JSON.stringify(note));
+    await waitDone(page);
+    const loadMs = Date.now() - t0;
+    let cells = await codeState(page);
+    console.log(`Julia ${name}: loaded and ran in ${loadMs} ms; cells ` + JSON.stringify(cells.map((c) => c.out.slice(0, 40))));
+    const julia = cells.filter((c) => c.lang === 'julia');
+    if (!julia.some((c) => c.out === '55')) fail('Julia soft scope: no cell shows 55: ' + JSON.stringify(julia));
+    if (!julia.some((c) => c.out.includes('squares: [1, 4, 9]') && c.out.includes('14'))) fail('Julia: a cell does not print and show its value: ' + JSON.stringify(julia));
+    if (!julia.some((c) => c.out === 'the sum of the squares is 14')) fail('Julia: a later cell does not read an earlier Julia cell\'s variable: ' + JSON.stringify(julia));
+    if (cells.some((c) => c.lang === 'go' && c.out === '20') === false) fail('Julia: the Go cell beside the Julia cells does not run: ' + JSON.stringify(cells));
+    const failedStyle = await page.$$eval('#notebook .output.error', (es) => es.map((e) => e.textContent));
+    if (failedStyle.length) fail('Julia example: cells failed: ' + failedStyle.join('; '));
+    // (the page replaces the Julia worker after each run: the badge says it is
+    // loading until the new one is ready, then says Julia alone)
+    const badgeNow = () => page.$eval('#notebook .cell[data-lang="julia"] .cell-head .lang-badge', (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
+    const restarting = await badgeNow();
+    if (restarting !== 'Julia' && restarting !== 'Julia · loading the Julia runtime…') fail('the badge of a Julia cell once Julia runs: ' + JSON.stringify(restarting));
+    await page.waitForFunction(() => {
+      const b = document.querySelector('#notebook .cell[data-lang="julia"] .cell-head .lang-badge');
+      return b && b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent === 'Julia';
+    }, null, { timeout: 120000 }).catch(() => fail('the badge of a Julia cell never says Julia once the new worker is ready'));
+
+    // What was downloaded, against what the note says: the third core and the
+    // image, as GitHub Pages serves them (gzip of the core, the image as
+    // written); the local server sends the core as it is.
+    const core = [...wire.keys()].find((k) => k.endsWith('.wasm'));
+    const image = [...wire.keys()].find((k) => k.endsWith('.bin.gz'));
+    if (!core || !image) fail('Julia: the core and the image were not both fetched: ' + [...wire.keys()].join(' '));
+    else if (!/^https?:/.test(target)) {
+      const gz = zlib.gzipSync(fs.readFileSync(path.join(target, 'playground-julia.wasm')), { level: 6 }).length;
+      const mb = (gz + wire.get(image)) / 1e6;
+      console.log(`Julia download: core ${(wire.get(core) / 1e6).toFixed(1)} MB (${(gz / 1e6).toFixed(1)} MB gzipped, as GitHub Pages sends it) + image ${(wire.get(image) / 1e6).toFixed(1)} MB = ${mb.toFixed(1)} MB over the wire; the page says ~${said && said[1]} MB, about ${said && said[2]} s; measured ${(loadMs / 1000).toFixed(1)} s`);
+      if (said && Math.abs(mb - +said[1]) > 0.25 * mb) fail(`Julia: the page says ~${said[1]} MB, the download is ${mb.toFixed(1)} MB`);
+      // (the time depends on the machine: a note when it is off by a quarter, a
+      // failure only when it is more than three times what the page says)
+      if (said && (loadMs / 1000 > 1.25 * +said[2] || loadMs / 1000 < 0.5 * +said[2])) console.log(`NOTE Julia: the page says about ${said[2]} s, this machine took ${(loadMs / 1000).toFixed(1)} s`);
+      if (said && loadMs / 1000 > 3 * +said[2]) fail(`Julia: the page says about ${said[2]} s, the load took ${(loadMs / 1000).toFixed(1)} s`);
+    }
+    const mem = await page.evaluate(() => window.playgroundMemory());
+    console.log(`Julia memory after the first run: wasm linear memory ${(mem.wasm / 1048576).toFixed(0)} MiB, image held by the worker ${(mem.image / 1048576).toFixed(1)} MiB, browser processes ${chromiumRssMB().toFixed(0)} MB resident (${before.toFixed(0)} MB before, peak ${peak.toFixed(0)} MB)`);
+
+    // 1b. A Julia cell typed in the code editor (the canvas surface, with --editor)
+    // or in the textarea: Shift+Enter runs it, in the Julia core already loaded.
+    await openFile(page, 'typed.md', '```julia\nx = 20\n```\n');
+    await waitDone(page);
+    await page.click('#add-end');
+    await page.click('.add-menu:not([hidden]) button[data-kind="julia"]');
+    await page.waitForFunction((ed) => {
+      const a = document.activeElement;
+      const keys = !!a && (ed ? a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror') : a.tagName === 'TEXTAREA');
+      return keys && a.closest('.cell').dataset.lang === 'julia';
+    }, expectEditor);
+    await page.keyboard.type('6 * 7');
+    await settle(page);
+    await page.waitForFunction((ed) => {
+      const a = document.activeElement;
+      return !!a && (ed ? a.hasAttribute('data-webcanvas-layer') : a.tagName === 'TEXTAREA');
+    }, expectEditor);
+    await page.keyboard.press('Shift+Enter');
+    await waitDone(page);
+    cells = await codeState(page);
+    if (cells.length !== 2 || cells[1].lang !== 'julia' || cells[1].out !== '42') fail('a Julia cell typed in the editor: ' + JSON.stringify(cells));
+
+    // 1c. Julia twice in a row: each run is a new kernel in a new wasm instance
+    // (go-embedded-julia cannot boot a second kernel in a process that has run
+    // Julia), so a struct a notebook defines is defined again without error, the
+    // first run's variables are gone, and neither run is lost.
+    const twice = '```julia\nstruct P\n    x::Int\nend\nP(21).x * 2\n```\n';
+    for (const n of [1, 2, 3]) {
+      await openFile(page, `twice${n}.md`, twice);
+      await page.waitForSelector(DONE, { timeout: 120000 });
+      cells = await codeState(page);
+      if (cells.length !== 1 || cells[0].out !== '42') fail(`Julia run ${n} of the same notebook: ` + JSON.stringify(cells));
+    }
+    await openFile(page, 'gone.md', '```julia\nP\n```\n');
+    await page.waitForSelector(DONE, { timeout: 120000 });
+    cells = await codeState(page);
+    if (!/UndefVarError/.test(cells[0].out)) fail('a variable of an earlier Julia run is still there: ' + JSON.stringify(cells));
+
+    // 1d. A replacement owed while a call is in flight. The worker that has run
+    // Julia is replaced (it must not boot a second kernel), but not while an edit
+    // is pending: it is made when the worker goes idle, or before the next run,
+    // whichever comes first. A burst of calls is kept in flight while the run ends
+    // (the worker's reply to them comes after its "recycle" message), and runs
+    // follow at once: every one must work, and the replacement must have happened.
+    const replaced = () => page.evaluate(() => window.playgroundRecycles || 0);
+    const rec0 = await replaced();
+    const w1 = await page.evaluate(() => window.playgroundWorkers);
+    for (const n of [1, 2, 3]) {
+      await page.evaluate(() => {
+        window.burst = setInterval(() => {
+          for (let i = 0; i < 10; i++) window.playgroundCall('parse', { markdown: '```go\n1\n```\n' }).catch(() => {});
+        }, 1);
+      });
+      await openFile(page, `busy${n}.md`, '```julia\nstruct Q\n    x::Int\nend\nQ(7).x\n```\n');
+      await page.waitForSelector(DONE, { timeout: 120000 });
+      await page.evaluate(() => clearInterval(window.burst));
+      cells = await codeState(page);
+      if (cells.length !== 1 || cells[0].out !== '7') fail(`Julia run ${n} with calls in flight: ` + JSON.stringify(cells));
+    }
+    // Each of the three runs executed Julia in a worker of its own, so each is
+    // followed by exactly one replacement (made when idle, or forced by the next run).
+    await page.waitForFunction((n) => (window.playgroundRecycles || 0) >= n, rec0 + 3, { timeout: 90000 }).catch(() => fail('the Julia worker was not replaced after each of three runs with calls in flight'));
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
+
+    // 1e. A Go-only run after a Julia run does not reboot Julia: no replacement, no
+    // new fetch, and as fast as a Go run is (the worker, replaced after the Julia
+    // run, holds a kernel nobody used).
+    await page.evaluate(() => window.playgroundMemory()); // answers when the new worker is ready
+    const r1 = await replaced();
+    const j1 = juliaRequests.length;
+    const tg = Date.now();
+    await openFile(page, 'go-only.md', '```go\n6 * 7\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    const goMs = Date.now() - tg;
+    cells = await codeState(page);
+    await new Promise((r) => setTimeout(r, 3000));
+    console.log(`Julia then a Go-only run: ${goMs} ms, replacements ${(await replaced()) - r1}, new Julia fetches ${juliaRequests.length - j1}`);
+    if (cells[0].out !== '42' || goMs > 5000) fail(`a Go-only run after Julia: ${goMs} ms ` + JSON.stringify(cells));
+    if ((await replaced()) !== r1 || juliaRequests.length !== j1) fail('a Go-only run after a Julia run rebooted Julia');
+    await openFile(page, 'after-go.md', '```julia\n1 + 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 120000 });
+    cells = await codeState(page);
+    if (cells[0].out !== '2') fail('a Julia run after the Go-only run: ' + JSON.stringify(cells));
+
+    // 2. The cells of one run, each on the same worker.
+    const run = async (src, extra = '') => {
+      await openFile(page, 'j.md', '```julia\n' + src + '\n```\n' + extra);
+      await page.waitForSelector(DONE, { timeout: 120000 });
+      return codeState(page);
+    };
+    cells = await run('println("hi")\n1 + 1');
+    if (cells[0].out !== 'hi\n2' && cells[0].out !== 'hi2') fail('Julia print and value: ' + JSON.stringify(cells));
+    cells = await run('s = 0\nfor i in 1:10\n    s += i\nend\ns');
+    if (cells[0].out !== '55') fail('Julia soft scope: ' + JSON.stringify(cells));
+    cells = await run('sqrt(-1)', '```go\n1 + 1\n```\n');
+    const styled = await page.$$eval('#notebook .output.error', (es) => es.length);
+    if (!/^ERROR: DomainError with -1\.0:/.test(cells[0].out) || !styled || !/Not run: a cell above failed/.test(cells[1].out)) fail('Julia exception: ' + JSON.stringify(cells));
+    cells = await run('x = (1,');
+    if (!/^line 1:8: syntax error/.test(cells[0].out)) fail('Julia syntax error: ' + JSON.stringify(cells));
+
+    // 3. A Julia variable does not reach Go, nor a Go variable Julia, and the cell says so.
+    await openFile(page, 'cross.md', '```julia\ntotal = 55\n```\n```go\ntotal + 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    cells = await codeState(page);
+    if (!/undefined: total/.test(cells[1].out) || !/Julia variables stay in Julia/.test(cells[1].out)) fail('Julia -> Go does not cross, and does not say so: ' + JSON.stringify(cells));
+    await openFile(page, 'cross2.md', '```go\nn := 10\n```\n```julia\nn + 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    cells = await codeState(page);
+    if (!/UndefVarError/.test(cells[1].out) || !/does not read the variables of other languages/.test(cells[1].out)) fail('Go -> Julia does not cross, and does not say so: ' + JSON.stringify(cells));
+
+    // 4. A cell that spins is stopped by the kernel at its 10 s, with Julia's
+    // message; the worker is not killed (the page's 30 s limit did not fire).
+    const workers = await page.evaluate(() => window.playgroundWorkers);
+    const ts = Date.now();
+    // (an empty `while true` is stopped by whichever bound it reaches first: its
+    // 20 million statements come up in about 9 s here, the 10 s next to it; a
+    // sleep has no statements to count, so it is the timeout alone)
+    const bounds = /^stopped: the Julia cell (ran longer than 20s|executed more than 20000000 statements), the limit$/;
+    cells = await run('while true\nend', '```julia\n1 + 1\n```\n');
+    console.log(`Julia spinning cell (${Date.now() - ts} ms): ` + JSON.stringify(cells[0].out));
+    if (!bounds.test(cells[0].out)) fail('a spinning Julia cell: ' + JSON.stringify(cells));
+    const ts2 = Date.now();
+    cells = await run('sleep(60)', '```julia\n1 + 1\n```\n');
+    const spun = Date.now() - ts2;
+    console.log(`Julia sleeping cell (${spun} ms): ` + JSON.stringify(cells[0].out));
+    if (cells[0].out !== 'stopped: the Julia cell ran longer than 20s, the limit' || /worker was killed/.test(cells[0].out)) fail('a sleeping Julia cell is not stopped by the kernel\'s timeout: ' + JSON.stringify(cells));
+    if (spun > 60000) fail(`the sleeping cell took ${spun} ms: the kernel's 20 s did not end it`);
+    if (!/Not run: a cell above failed/.test(cells[1].out)) fail('the cell after the stopped one should be skipped: ' + JSON.stringify(cells));
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('a spinning Julia cell restarted the core');
+    cells = await run('6 * 7');
+    if (cells[0].out !== '42' || (await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('the run after the spinning cell: ' + JSON.stringify(cells));
+
+    // 5. The limits: memory and statements end a cell with a message, on the same worker.
+    cells = await run('zeros(200_000_000)');
+    console.log('Julia memory limit: ' + JSON.stringify(cells[0].out.slice(0, 100)));
+    if (!/^stopped: the Julia cell went over its memory limit/.test(cells[0].out)) fail('Julia memory limit: ' + JSON.stringify(cells));
+    cells = await run('n = 0\nfor i in 1:30_000_000\n    n += 1\nend');
+    if (!bounds.test(cells[0].out)) fail('Julia step limit: ' + JSON.stringify(cells));
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== workers) fail('a limit restarted the Julia core');
+
+    // 6. Deep recursion, in the default V8 stack: measured, not worked around.
+    // Whether it ends in a Julia error or loses the core (a RangeError), the
+    // outcome is printed; the test fails only when the page is left unusable.
+    for (const [what, src] of [
+      ['1,000 deep', 'f(n) = n == 0 ? 0 : 1 + f(n - 1)\nf(1_000)'],
+      ['10,000 deep', 'f(n) = n == 0 ? 0 : 1 + f(n - 1)\nf(10_000)'],
+      ['100,000 deep', 'f(n) = n == 0 ? 0 : 1 + f(n - 1)\nf(100_000)'],
+      ['infinite', 'g(n) = g(n + 1) + 1\ng(1)'],
+    ]) {
+      const w = await page.evaluate(() => window.playgroundWorkers);
+      const t = Date.now();
+      cells = await run(src);
+      const restarts = (await page.evaluate(() => window.playgroundWorkers)) - w;
+      console.log(`Julia recursion ${what} (${Date.now() - t} ms, ${restarts} worker restarts): ` + JSON.stringify(cells[0].out.slice(0, 110)));
+      // Measured in Chromium: Julia's own depth bound answers (StackOverflowError)
+      // from 10,000 deep on; the core is not lost. A loss would be a defect to
+      // report upstream, not to work around.
+      if (restarts) fail(`deep recursion (${what}) killed the Julia core in Chromium (report to go-embedded-julia): ${cells[0].out}`);
+      if (what !== '1,000 deep' && !/^ERROR: StackOverflowError/.test(cells[0].out)) fail(`recursion ${what}: ${JSON.stringify(cells)}`);
+      const after = await run('1 + 2');
+      if (after[0].out !== '3') fail(`after Julia recursion ${what}, the next run: ` + JSON.stringify(after));
+    }
+    // Every boot of a kernel keeps about a GiB of the instance's memory until the
+    // instance ends, so the page replaces the worker before the 4 GiB run out
+    // (about the seventh run did, before): the many runs above survived by it.
+    const recycles = await page.evaluate(() => window.playgroundRecycles || 0);
+    const finalMem = await page.evaluate(() => window.playgroundMemory());
+    console.log(`Julia: ${recycles} planned worker replacements over the runs above; linear memory now ${(finalMem.wasm / 1048576).toFixed(0)} MiB; browser processes ${chromiumRssMB().toFixed(0)} MB resident, peak ${peak.toFixed(0)} MB (${before.toFixed(0)} MB before Julia)`);
+    if (!recycles) fail('Julia: no worker replacement over more than twenty runs: the memory would have run out');
+  } finally {
+    clearInterval(sampler);
+    await page.close();
+  }
+
+  // 7. The Julia image cannot be fetched: Julia's cells say so, once, and the
+  // other languages run, in that page and in the notebooks after it.
+  const bad = await browser.newPage();
+  bad.on('pageerror', (e) => fail('Julia failure page error: ' + e.message));
+  const attempts = [];
+  // (by path: the worker's own URL carries the image's name in its query)
+  await bad.route((u) => /\/julia-image-[^/]*\.bin\.gz$/.test(u.pathname), (route) => {
+    attempts.push(route.request().url());
+    return route.abort('connectionrefused');
+  });
+  await bad.goto(url);
+  await waitDone(bad);
+  await openFile(bad, 'down.md', '# down\n\n```go\n1 + 1\n```\n\n```julia\n1 + 1\n```\n\n```go\n2 * 21\n```\n');
+  await bad.waitForSelector(DONE, { timeout: 60000 });
+  await bad.click('#run');
+  await bad.waitForFunction(() => /did not start/.test(document.getElementById('status').textContent), null, { timeout: 60000 }).catch(() => fail('Julia failure: the status does not say Julia did not start'));
+  await waitDone(bad);
+  let cells = await codeState(bad);
+  console.log('Julia that cannot start: ' + JSON.stringify(cells.map((c) => c.out.slice(0, 90))));
+  if (cells[0].out !== '2' || !/^Julia did not run: its runtime did not start \(/.test(cells[1].out) || !/The other languages are unaffected/.test(cells[1].out)) fail('Julia that cannot start: ' + JSON.stringify(cells));
+  await openFile(bad, 'go.md', '```go\n6 * 7\n```\n');
+  await waitDone(bad);
+  cells = await codeState(bad);
+  if (cells[0].out !== '42') fail('Go after a Julia that cannot start: ' + JSON.stringify(cells));
+  // (the worker asks the cache first, then the network: two requests at most, once)
+  if (attempts.length < 1 || attempts.length > 2) fail(`the page tried the Julia image ${attempts.length} times`);
+  await bad.close();
 }
 
 try {
@@ -824,6 +1149,8 @@ try {
 
   const names = await page.$$eval('#examples a', (as) => as.map((a) => a.dataset.name));
   let seenRuby = false;
+  let timed = false; // the one-cell against run-all timing, on the first notebook without Julia
+  let sawJuliaExample = null;
   for (const [i, name] of names.entries()) {
     const ruby = await page.evaluate((n) => {
       const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
@@ -856,7 +1183,17 @@ try {
     });
     console.log(`${name}: ${r.cells} cells, ${r.withResult} with a result, ${r.figures} figures (${r.svgFigures} <svg>) — ${r.status}`);
     if (r.cells === 0) fail(`${name}: no code cell`);
-    if (r.withResult !== r.cells) fail(`${name}: ${r.cells - r.withResult} cells without a result`);
+    // A notebook with a Julia cell is not run by the page itself past the cells
+    // above the first one: Julia loads when the reader runs it (juliaChecks).
+    const firstJulia = await page.evaluate((n) => {
+      const ex = JSON.parse(document.getElementById('examples-data').textContent).find((x) => x.name === n);
+      return ex.cells.filter((c) => c.kind === 'code').findIndex((c) => c.lang === 'julia');
+    }, name);
+    if (firstJulia >= 0) {
+      if (juliaRequests.length) fail(`${name}: the Julia core was fetched before a Julia cell ran: ` + juliaRequests.join(' '));
+      if (r.withResult !== firstJulia) fail(`${name}: ${r.withResult} cells with a result, the ${firstJulia} above the first Julia cell expected`);
+      sawJuliaExample = name;
+    } else if (r.withResult !== r.cells) fail(`${name}: ${r.cells - r.withResult} cells without a result`);
     if (r.errors.length) fail(`${name}: ${r.errors.join('; ')}`);
     if (r.figures !== r.svgFigures) fail(`${name}: a figure is not an <svg>`);
     // Each cell's badge names the language of its fence, in text, for
@@ -866,6 +1203,7 @@ try {
       const langs = new Map(JSON.parse(document.getElementById('languages-data').textContent).map((l) => [l.name, l]));
       const want = ex.cells.filter((c) => c.kind === 'code').map((c) => {
         const l = langs.get(c.lang || 'go');
+        if (c.lang === 'julia') return 'JULIA'; // it loads when run: see below
         return l.runs ? l.label : l.label + ' · not runnable yet';
       });
       const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
@@ -886,6 +1224,13 @@ try {
       const b = badges.got[i];
       // A Julia or R cell is checked, not run: its badge says "not runnable
       // yet", and its accessible name is the language alone.
+      // A Julia cell runs, once its core is loaded, which a run of it does:
+      // until then its badge says "loads when run".
+      if (w === 'JULIA') {
+        if (!b || !/^Julia · loads when run \(~\d+ MB\)$/.test(b.text) || b.runnable !== 'yes' || b.label !== 'Julia cell' || !b.described || !b.visible)
+          fail(`${name}: cell ${i} should say Julia loads when run: ${JSON.stringify(b)}`);
+        return;
+      }
       const checked = w.endsWith(' · not runnable yet');
       const lang = checked ? w.slice(0, -' · not runnable yet'.length) : w;
       if (!b || b.text !== w || b.runnable !== (checked ? 'no' : 'yes') || b.label !== lang + ' cell' || !b.described || !b.visible)
@@ -901,7 +1246,10 @@ try {
     if (!got.equals(file)) fail(`${name}: Download is not the notebook byte for byte (${got.length} bytes, the file ${file.length})`);
     // Running one cell runs the cells above it, never more: not slower than
     // running them all.
-    if (i === 0) {
+    // (on a notebook of Go cells alone: another language's cells take milliseconds
+    // that vary on a loaded machine, which the Julia example used to absorb)
+    if (!timed && firstJulia < 0 && !ruby && !badges.want.some((w) => !/^Go$/.test(w))) {
+      timed = true;
       const one = [];
       const all = [];
       for (let k = 0; k < 3; k++) {
@@ -945,37 +1293,32 @@ try {
   if (langs.injected) fail('a fence\'s info string became markup');
   if (langs.cells.join() !== 'Go') fail('the Go cell after them: ' + JSON.stringify(langs.cells));
 
-  // A Julia cell is checked, not run: its badge says so, the other cells run, none
-  // reading it (see above); the core with the Julia parser is loaded.
+  // A Julia cell opened in a notebook is not run by the page: its badge says it
+  // loads when run, the cells around it that do not read it run when the reader
+  // runs the notebook, and nothing of Julia is fetched.
   await page.evaluate(() => (document.body.dataset.state = 'switching'));
-  const tj = Date.now();
   await page.setInputFiles('#open', {
     name: 'julia.md',
     mimeType: 'text/markdown',
-    buffer: Buffer.from('# julia\n\n```julia\ntotal = sum(1:10)\n```\n\n```go\n1 + 1\n```\n\n```go\n2 * 21\n```\n'),
+    buffer: Buffer.from('# julia\n\n```go\n1 + 1\n```\n\n```julia\ntotal = sum(1:10)\n```\n\n```go\n2 * 21\n```\n'),
   });
   await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
-  const jl = await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
-    return cells.map((c) => {
-      const b = c.querySelector('.cell-head .lang-badge');
-      const text = b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent;
-      return { badge: text, runnable: b.dataset.runnable, out: c.querySelector('.outputs').textContent };
-    });
-  });
-  console.log(`julia: ${Date.now() - tj} ms; ` + jl.map((c) => `${c.badge} [${c.out}]`).join(' | '));
-  if (jl.length !== 3) fail('julia: ' + JSON.stringify(jl));
-  else {
-    if (jl[0].badge !== 'Julia · not runnable yet' || jl[0].runnable !== 'no' || !jl[0].out.includes('Julia cells run in go-notebook, not yet in the browser'))
-      fail('the Julia cell: ' + JSON.stringify(jl[0]));
-    if (!jl[2].out.includes('42')) fail('the independent cell: ' + JSON.stringify(jl[2]));
-  }
+  const jl = await codeState(page);
+  console.log('julia opened: ' + jl.map((c) => `${c.lang} [${c.out.slice(0, 60)}]`).join(' | '));
+  if (jl.length !== 3 || jl[0].out !== '2' || !/^Not run yet: Run loads Julia \(~\d+ MB, about \d+ s\) and runs this cell\.$/.test(jl[1].out) || !/^Not run yet/.test(jl[2].out))
+    fail('a Julia cell opened: ' + JSON.stringify(jl));
 
   await editingChecks(page);
   if (expectEditor) await shiftEnterRace(page);
   await limitChecks();
   await rLimitChecks();
   await fortranLimitChecks();
+  // Only now, with every other language run, does a Julia cell run: nothing of
+  // Julia was fetched until here.
+  if (juliaRequests.length) fail('the Julia core or its image was fetched though no Julia cell ran: ' + juliaRequests.join(' '));
+  // (only the notebook site has a Julia example; the others show nothing of Julia)
+  if (sawJuliaExample === null) console.log('no example with a Julia cell on this site: the Julia checks are not run');
+  else await juliaChecks(sawJuliaExample);
 } finally {
   await browser.close();
   if (server) server.close();

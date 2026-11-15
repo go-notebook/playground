@@ -182,6 +182,8 @@ github.com/go-asn1-ber/asn1-ber v1.5.8 h1:H9AZkK22UOmfX8J84ubyaZxKJZ3FMHVwn8swoM
 github.com/go-asn1-ber/asn1-ber v1.5.8/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
 github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a h1:WnRzPthHV1yr9s1jPmUmdApc1M3iIA1ZfH/fwKmCzFg=
 github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a/go.mod h1:syDsgdbvlbD/zjgs6nJktc2araTaN5DEL3a/OvPCrkM=
+github.com/go-bignum/bigfloat v0.2.0 h1:9sDb0Trg9ikAoSvLtjAXBLERNX2wYkbHi/w3FSqj6BQ=
+github.com/go-bignum/bigfloat v0.2.0/go.mod h1:YVHspp0DKscpWZ6NK+rSCXxCfVDldNNoAN2JYQ8FInk=
 github.com/go-commonmark/commonmark v0.1.0 h1:UUjE5rIPuYYxDBi2Nj2/fNoTGDyAirp3p/t8B4TzMjE=
 github.com/go-commonmark/commonmark v0.1.0/go.mod h1:llCsI7zIAI9nbpH+zhewbQfL6WtyYxmkB4HWZ0YseD8=
 github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 h1:WDXYARIlvdq8yAthNq8esKhDlJPBxbAgYs/7psRyI/E=
@@ -287,6 +289,8 @@ github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd h1:0tExRGSb1rQsGZ
 github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd/go.mod h1:wdKZWNCMcBQA7Dgp7xu2QFDPF7tQ2fTlOG4cjGEMgxU=
 github.com/go-regexp/engine v0.4.2 h1:oI69hZyQyZH2n5w0UI7UEO7CaTa7hy3VSgKo76EJB4g=
 github.com/go-regexp/engine v0.4.2/go.mod h1:fWnPvSuE4HIVpBQIHMiaPMEE7InDc00KeoPr/QNFGwA=
+github.com/go-regexp/pcre2 v0.1.0 h1:5nHNMcypAjg0DeTnCyHyF7EocavWnI5bvLRpt9nDXpw=
+github.com/go-regexp/pcre2 v0.1.0/go.mod h1:NoGfatNS+oPnPJQpPsHmVyW6fJxlziutuLku3KjNf9Y=
 github.com/go-richdoc/richdoc v0.7.0 h1:vhHypa0y26ulrOz6Aw1RIzeLjSMsFJyU1SzK5jd90lg=
 github.com/go-richdoc/richdoc v0.7.0/go.mod h1:RhxAcqwoUg1pnTYCiRdKILzOZwOmraO0dMJI4N6yY70=
 github.com/go-rouge/rouge v0.9.0 h1:qIFbx0aQYYE2YeSAeTjhWa5zumXHJuNi0i6pJgO2IEk=

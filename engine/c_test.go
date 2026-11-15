@@ -14,7 +14,7 @@ import (
 
 // A C cell is checked, not run, through go-notebook's registry alone: a later
 // C cell sees the typedefs and macros of the earlier ones, the cells that read
-// what it defines are blocked, with C's message, also next to Julia and R
+// what it defines are blocked, with C's message, also next to Ruby and R
 // cells in the same notebook; the others run.
 func TestCCells(t *testing.T) {
 	c := analysis.RunOf("c")
@@ -22,19 +22,18 @@ func TestCCells(t *testing.T) {
 		"```c\ntypedef int myint;\n#define N 10\n```\n" +
 		"```c\nmyint total = N * N;\n```\n" +
 		"```go\nm := total + 1\n```\n" +
-		"```julia\nj = 1\n```\n" +
 		"```ruby\nk = 2\n```\n" +
 		"```r\nq <- 1\n```\n" +
 		"```go\nn * 2\n```\n"
 	res := Run(nb)
-	want := []string{"", c.NotRun, c.NotRun, c.Blocked(2), JuliaNotRun, "", "", ""}
-	status := []string{"", StatusNotRun, StatusNotRun, StatusBlocked, StatusNotRun, "", "", ""} // the Ruby and R cells run
+	want := []string{"", c.NotRun, c.NotRun, c.Blocked(2), "", "", ""}
+	status := []string{"", StatusNotRun, StatusNotRun, StatusBlocked, "", "", ""} // the Ruby and R cells run
 	for i, w := range want {
 		if res[i].Error != w || res[i].Skipped || res[i].Status != status[i] {
 			t.Errorf("cell %d: %+v, want %q (%q)", i, res[i], w, status[i])
 		}
 	}
-	if got := res[7].Display[0]["text/plain"]; got != "20" {
+	if got := res[6].Display[0]["text/plain"]; got != "20" {
 		t.Errorf("independent cell: %q", got)
 	}
 }

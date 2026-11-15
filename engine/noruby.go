@@ -41,10 +41,10 @@ func (s *session) fCell(string) (string, []map[string]string, string) {
 	return "", nil, "this build runs Go cells only (in the page, the second core is loaded for a notebook with Fortran cells)"
 }
 
-// JuliaSupported reports whether this build checks Julia cells: the default
-// core leaves go-embedded-julia's parser out (2 MB), and the page loads the
-// core built with the tag ruby, which has it, for a notebook with a Julia
-// cell.
+// JuliaSupported reports whether this build checks Julia cells (their syntax
+// errors, at their line and column): the default core leaves go-embedded-julia's
+// parser out (2 MB). It is in the second and the third core; the third one also
+// runs them (JuliaRuns).
 const JuliaSupported = false
 
 // checker is absent from the default core: it makes no analysis.
@@ -58,6 +58,10 @@ func (k *checker) cell(i int) (string, bool) {
 	lang := k.cells[i].Lang
 	return "this build checks no " + lang + " cells (in the page, the core with the parsers is loaded for a notebook with " + lang + " cells)", false
 }
+
+// syntax and crossNote find nothing without the analysis.
+func (k *checker) syntax(int) string    { return "" }
+func (k *checker) crossNote(int) string { return "" }
 
 // blocked finds nothing to block without the analysis.
 func (k *checker) blocked() map[int]int { return nil }

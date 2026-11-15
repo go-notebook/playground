@@ -56,6 +56,38 @@ func (k *checker) cell(i int) (msg string, checked bool) {
 	return fmt.Sprintf("line %d:%d: %s", line, col, e.Msg), false
 }
 
+// syntax is the first syntax error of code cell i, at the cell's line and
+// column ("line 2:8: syntax error: …"), or "": the checker's parser says where
+// a Julia cell is wrong, where the kernel's own text would not.
+func (k *checker) syntax(i int) string {
+	if len(k.g.Cells[i].Errors) == 0 {
+		return ""
+	}
+	msg, _ := k.cell(i)
+	return msg
+}
+
+// crossNote is what a failure of cell i is told when the cell reads what a cell
+// of another language defines and one of the two is Julia: go-notebook's graph
+// has the edge (Julia variables cross to Go cells there), the page's Julia core
+// does not carry them, so the failure is, most likely, the missing variable. The
+// note says so. It is "" for any other cell.
+func (k *checker) crossNote(i int) string {
+	cells := k.cells
+	for _, d := range k.g.Deps[i] {
+		if d == i || cells[d].Lang == cells[i].Lang {
+			continue
+		}
+		switch {
+		case cells[d].Lang == analysis.Julia:
+			return fmt.Sprintf("\nnote: this cell reads what cell %d, a Julia cell, defines; in the page Julia variables stay in Julia and do not cross to %s cells (go-notebook shares them)", d, cells[i].Lang)
+		case cells[i].Lang == analysis.Julia:
+			return fmt.Sprintf("\nnote: this cell reads what cell %d, a %s cell, defines; in the page a Julia cell does not read the variables of other languages (go-notebook shares them)", d, cells[d].Lang)
+		}
+	}
+	return ""
+}
+
 // blocked maps each code cell that reads what a cell of a check-only language
 // defines, directly or through other cells, to that cell, by go-notebook's
 // dependency graph.
