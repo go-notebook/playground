@@ -490,7 +490,23 @@ async function fortranLimitChecks() {
   // and restarts the worker. The error is the evaluator's, the worker count does
   // not move, and the next run, in the same session, works.
   const module = 'module m\ncontains\nrecursive function f(k) result(r)\ninteger :: k, r, i, j\nr = 0\nif (k > 0) then\ndo i = 1, 1\ndo j = 1, 1\nif (i == j) then\nselect case (k)\ncase default\nif (k > 0) then\nr = f(k - 1) + 1\nend if\nend select\nend if\nend do\nend do\nend if\nend function\nend module';
+  // a frame with 13 DO/IF pairs and a SELECT around the recursive call costs the
+  // host's stack about 14 times a plain one: Chromium overflowed it at 150 to 199
+  // nested calls, and the call bound weighs a call by that nesting
+  let nested = '', nestedEnd = '';
+  const decls = [];
+  for (let i = 1; i <= 13; i++) {
+    decls.push('i' + i);
+    nested += `do i${i} = 1, 1\nif (i${i} == 1) then\n`;
+    nestedEnd = 'end if\nend do\n' + nestedEnd;
+  }
+  const heavy = `module m\ncontains\nrecursive function f(k) result(r)\ninteger :: k, r, ${decls.join(', ')}\nr = 0\nif (k > 0) then\n${nested}select case (k)\ncase default\nr = ${'('.repeat(20)}f(k - 1)${')'.repeat(20)} + 1\nend select\n${nestedEnd}end if\nend function\nend module`;
   const hard = [
+    ['deep recursion, 13 DO/IF pairs per frame, infinite', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
+    ['deep recursion, 13 DO/IF pairs per frame, 45 deep still runs', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(45)\n```\n', /^45$/, 1, true],
+    ['memory bomb, 100000 objects with a 64000-byte array component', '```fortran\ntype :: t\nreal(8) :: x(8000)\nend type\ntype(t) :: a(100000)\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+    ['memory bomb, objects with a 1 MiB character component', '```fortran\ntype :: u\ncharacter(len=1048576) :: c\nend type\ntype(u) :: a(2000)\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
+    ['memory bomb, two 2^25 arrays are 512 MiB together', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**25))\nallocate(b(2**25))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],
     ['deep recursion, infinite', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
     ['deep recursion, 150 deep still runs', '```fortran\n' + module + '\n```\n```fortran\nuse m\nprint *, f(150)\n```\n', /^150$/, 1, true],
     ['memory bomb, two 2^27 arrays', '```fortran\ninteger, allocatable :: a(:), b(:)\nallocate(a(2**27))\nallocate(b(2**27))\n```\n```fortran\nprint *, 1\n```\n', /memory limit exceeded/, 0],

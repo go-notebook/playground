@@ -204,8 +204,8 @@ github.com/go-datetime/dates v0.2.0 h1:5zXrMqTgw3ljlQfghRsdJRtXYqnR6jYqTgMvA3kG8
 github.com/go-datetime/dates v0.2.0/go.mod h1:FmzSHylloy714Cc8MEkRjREYP7TcslqjmzsFMQXglAg=
 github.com/go-embedded-c/c v0.2.1 h1:LCNcLHJ1T3Ry0adJwO+jK9RnoFwrMd6yR/0bb0muHIc=
 github.com/go-embedded-c/c v0.2.1/go.mod h1:MhuXRqUtTZTUnm/3fVjho1HiL6QCFylChzOQ+Tu9eiQ=
-github.com/go-embedded-fortran/fortran v0.22.0 h1:qtB8mCItWGqWXG9Z0XAWUcDZIemCErSuyJgw+XsJXNI=
-github.com/go-embedded-fortran/fortran v0.22.0/go.mod h1:UUtUFdyuO7fWnDoBjbjGZNGXg7bH2fW2DLp1D4QOAkg=
+github.com/go-embedded-fortran/fortran v0.24.1 h1:hp0Rx5xhoLhNXVsVRmI/B3QdKz+Stxseklb9B5TX3Ro=
+github.com/go-embedded-fortran/fortran v0.24.1/go.mod h1:UUtUFdyuO7fWnDoBjbjGZNGXg7bH2fW2DLp1D4QOAkg=
 github.com/go-embedded-julia/julia v0.17.0 h1:lCsAJ6bsvfqC1OGM3d5LUGbZlpdvDq+MoXFv/Bo+VVo=
 github.com/go-embedded-julia/julia v0.17.0/go.mod h1:WkSyHRvyKTls2QhqjwORXAcDOJCeoO6zIx2wedBPLpk=
 github.com/go-embedded-r/r v0.17.1 h1:raX7Ac9Bvni/pw+A+7lWFO1UkJqm66d4f26uh57DH2w=
@@ -265,8 +265,8 @@ github.com/go-ndarray/ndarray v0.40.3 h1:jsQnEKagtYZs484MzLNGbpcttkVvS1m8UrodoWJ
 github.com/go-ndarray/ndarray v0.40.3/go.mod h1:O4U0Y5pV0Pakd0iqx5ECW8VP346oxJlvm73FTeQ1rI8=
 github.com/go-nokogiri/nokogiri v0.1.0 h1:3Q3BewGHK16Bt34ggJeyf9xeIMJyA3dmfbIxARPgR9U=
 github.com/go-nokogiri/nokogiri v0.1.0/go.mod h1:zjghooYIK8Xfg+fL4/OUhROslx51xGsM3JKtB2TI0tg=
-github.com/go-notebook/notebook v0.18.1-0.20261115131237-9eb3654584b3 h1:Ja5nF0fto/fjrH0PwwDA7kYXt1SFj4qDgzTAgkOuohc=
-github.com/go-notebook/notebook v0.18.1-0.20261115131237-9eb3654584b3/go.mod h1:Q7d0b6rXhvLl67TkH3Ut7Lx7475EIKxaCh6axjItQdA=
+github.com/go-notebook/notebook v0.20.0 h1:puHnpLw1qupEVT+9PYgm0WnKlQCJf0yoiw5vNCzDMBk=
+github.com/go-notebook/notebook v0.20.0/go.mod h1:UuafSbeeR/l6bA/dg817XK0/ns6azBubh9uJmiys9bY=
 github.com/go-numerics/integrate v0.2.0 h1:IkJhDimTc7nQETCixEvbbHhtOF36GbANBKJI3mJB3Kw=
 github.com/go-numerics/integrate v0.2.0/go.mod h1:ABjpcWy8ZSOg8j6S+7YRsvMJ2LpVkH4E64/CGet2gCw=
 github.com/go-numerics/optimize v0.3.1 h1:eYkT9BpORKSwXnDtEJxXfZ19qJT0cI2RH6xEL3VLZSU=
