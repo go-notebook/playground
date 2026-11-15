@@ -416,6 +416,70 @@ async function rLimitChecks() {
   await page.close();
 }
 
+// fortranExampleChecks reads the open 7-fortran notebook: Fortran cells run, so
+// each says Fortran on its badge, the one that prints shows what the program
+// prints, and none is in the failed or not-run style; a variable persists from one Fortran
+// cell to the next; the Go cell beside them runs on its own variable; and the
+// prose says Fortran cells run.
+async function fortranExampleChecks(page, name) {
+  const r = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#notebook .cell[data-lang]')];
+    return {
+      cells: cells.map((c) => ({
+        lang: c.dataset.lang,
+        out: (c.querySelector('.outputs').textContent || '').trim(),
+        skippedStyle: c.querySelectorAll('.outputs .output.skipped').length,
+        failStyle: c.querySelectorAll('.outputs .output.error').length,
+      })),
+      prose: [...document.querySelectorAll('#notebook .prose')].map((p) => p.textContent).join('\n'),
+    };
+  });
+  const fs_ = r.cells.filter((c) => c.lang === 'fortran');
+  console.log(`${name}: Fortran example: ${fs_.length} cells: ` + fs_.map((c) => JSON.stringify(c.out.slice(0, 40))).join(' | '));
+  if (fs_.length < 2 || fs_.some((c) => c.skippedStyle || c.failStyle) || !fs_[fs_.length - 1].out) fail(`${name}: a Fortran cell looks failed, not run or silent: ` + JSON.stringify(fs_));
+  if (!fs_.some((c) => /\b385\b/.test(c.out))) fail(`${name}: the Fortran cell that reads another cell's variable shows no real output: ` + JSON.stringify(fs_));
+  const go = r.cells.filter((c) => c.lang === 'go');
+  if (!go.length || go.some((c) => c.out !== '42' || c.failStyle || c.skippedStyle)) fail(`${name}: the Go cell should run alone and show 42: ` + JSON.stringify(go));
+  if (/checked, not run|not run yet|not yet in the browser|cannot start/.test(r.prose + fs_.map((c) => c.out).join(' '))) fail(`${name}: the example still says Fortran is not run`);
+}
+
+// fortranLimitChecks: a Fortran cell that runs away is stopped by the
+// evaluator's own bounds (its step count, its 10 s) with a message, and the page
+// stays usable: the cell after it says it was not run, the worker is not killed
+// (the page's 30 s watchdog did not end it), and the next run, Fortran and Go,
+// works. A runaway loop must never hang the tab.
+async function fortranLimitChecks() {
+  const page = await browser.newPage();
+  page.on('pageerror', (e) => fail('Fortran limit page error: ' + e.message));
+  await page.goto(url);
+  await waitDone(page);
+  const cases = [
+    ['endless DO', 'integer :: i\ni = 0\ndo\n  i = i + 1\nend do', /step|ran longer than/],
+    ['endless DO WHILE', 'logical :: t = .true.\ndo while (t)\nend do', /step|ran longer than/],
+    ['nested DO, 10^10 iterations', 'integer :: i, j, s\ns = 0\ndo i = 1, 100000\n  do j = 1, 100000\n    s = s + 1\n  end do\nend do', /step|ran longer than/],
+  ];
+  let base = null;
+  for (const [what, src, want] of cases) {
+    const t0 = Date.now();
+    // The first case loads the second core, which starts its worker; the
+    // count is taken after it, and no later run may start another.
+    const workers = base === null ? null : await page.evaluate(() => window.playgroundWorkers);
+    await openFile(page, `fortran-${what}.md`, '```fortran\n' + src + '\n```\n```fortran\nprint *, 1\n```\n');
+    await page.waitForSelector(DONE, { timeout: 60000 });
+    const cells = await codeState(page);
+    console.log(`Fortran ${what} (${Date.now() - t0} ms): ` + JSON.stringify(cells[0].out.slice(0, 100)));
+    if (!want.test(cells[0].out) || /worker was killed/.test(cells[0].out)) fail(`Fortran ${what}: a runaway cell was not stopped by the evaluator: ` + JSON.stringify(cells));
+    if (!/Not run: a cell above failed/.test(cells[1].out)) fail(`Fortran ${what}: the cell after the stopped one should be skipped: ` + JSON.stringify(cells));
+    if (workers !== null && (await page.evaluate((w) => window.playgroundWorkers - w, workers)) !== 0) fail(`Fortran ${what}: the core was restarted`);
+    base = 1;
+    await openFile(page, `fortran-after-${what}.md`, '```fortran\ninteger :: k = 6\nprint *, k * 7\n```\n```go\n1 + 1\n```\n');
+    await waitDone(page);
+    const after = await codeState(page);
+    if (!/^42$/.test(after[0].out.trim()) || after[1].out !== '2') fail(`Fortran ${what}: the run after the limit: ` + JSON.stringify(after));
+  }
+  await page.close();
+}
+
 // ---- Editing --------------------------------------------------------------
 
 const CODE_CELLS = '#notebook .cell[data-lang]';
@@ -474,7 +538,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),R,Ruby,C · not runnable yet,Fortran · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),Fortran,R,Ruby,C · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;
@@ -705,6 +769,7 @@ try {
     for (const label of Object.keys(CHECKED))
       if (badges.want.includes(label + ' · not runnable yet')) await checkedExampleChecks(page, name, label);
     if (badges.want.includes('R')) await rExampleChecks(page, name);
+    if (badges.want.includes('Fortran')) await fortranExampleChecks(page, name);
     // Download gives the notebook back byte for byte, as the site serves it.
     const file = await (await page.request.get(new URL(`notebooks/${name}.md`, page.url()).href)).body();
     const got = await downloadBytes(page);
@@ -784,6 +849,7 @@ try {
   await editingChecks(page);
   await limitChecks();
   await rLimitChecks();
+  await fortranLimitChecks();
 } finally {
   await browser.close();
   if (server) server.close();

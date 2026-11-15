@@ -112,7 +112,7 @@ A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.co
 
 ### Versions of the languages in the page
 
-go-notebook v0.18.0 (this page), with go-embedded-r v0.17.1 for R (it runs in the page), go-embedded-julia's parser v0.15.0 for Julia (checked, not run: *Julia cells run in go-notebook, not yet in the browser*), and Fortran checked, not run.
+go-notebook v0.18.0 (this page), with go-embedded-r v0.17.1 for R (it runs in the page), go-embedded-julia's parser v0.15.0 for Julia (checked, not run: *Julia cells run in go-notebook, not yet in the browser*), and go-embedded-fortran v0.17.0 for Fortran (it runs in the page).
 
 ### Julia cells: checked, not run in the page
 
@@ -125,9 +125,16 @@ A ` ```julia ` cell is parsed and checked as in [go-notebook](https://github.com
 - The other cells run.
 - **The page checks Julia cells with the second core.** The page loads it for a notebook with a Julia cell, as for a Ruby one, and the status line says *Loading the Julia parser…*. The parser added 1.0 MB to `playground-ruby.wasm` (0.28 MB gzipped, +2.2%). `playground.wasm` does not carry it: since playground v0.10.0, only the second core imports go-notebook's `analysis/parsers` (v0.9.0), which links the Julia and R parsers. The default core still knows both languages' names, so its menus and edits offer them ([#23](https://github.com/go-notebook/playground/issues/23): playground v0.8.0 and v0.9.0 linked both parsers into it, 1.4 MB). About 0.29 MB of the parser packages' `init` tables remains in it, because go-notebook's `analysis` imports those packages. `web/test/page.mjs` checks the badge, the blocked cell and the independent one.
 
-### Fortran cells: checked, not run in the page
+### Fortran cells: run in the page
 
-go-notebook v0.17.0 runs ` ```fortran ` cells (`fcells`), and registers them as running; this page links no Fortran runtime. `engine.CheckOnly` makes Fortran check-only by language, as Julia is, so a Fortran cell is parsed and checked (the parser rides the second core with the others) and says *Fortran cells run in go-notebook, not yet in the browser*, with the badge *Fortran · not runnable yet*; it never reaches the Go evaluator (`TestFortranIsCheckOnlyInThePage`). The + menu offers it.
+A ` ```fortran ` cell runs, with [go-embedded-fortran](https://github.com/go-embedded-fortran/fortran)'s evaluator compiled to WebAssembly, through go-notebook's own runner (`fcells.Session.Eval`, so the output and the errors are formatted in one place for the kernel and the page). There is no `gfortran` and no server.
+
+- Its badge reads *Fortran*, and the + menu offers it among the languages that run (both come from go-notebook's registry; `engine.CheckOnly` no longer lists Fortran, only Julia). What the cell prints (`print *`, `write`) is the output, followed by what it writes to standard error; a failure is the evaluator's own, with its line and column, and stops the run.
+- Modules, procedures, derived types and variables persist from one Fortran cell to the next (one session per notebook). They stay Fortran's, as in go-notebook (`analysis.Isolated`): a Go cell cannot read what a Fortran cell declares, and the other way round (`TestFortranCellsAreIsolated`).
+- **Limits.** A tab must not freeze, so `engine.FortranOptions` bounds each cell: 200 million DO iterations and procedure calls (go-notebook's default is 2^32, about a minute natively), 10 s, under the page's 30 s watchdog (`?cell-limit=`), and 16 MiB of output to each stream. An endless `do` ends with `step limit reached: the cell ran too many loop iterations and calls` after about 4 s in Chromium, the next cells are skipped, the worker is not killed and the page stays usable (`TestFortranLimitsStopARunawayCell`, and `fortranLimitChecks` in `web/test/page.mjs` on the real page).
+- **The host is out of reach.** The evaluator has no file or environment access (`TestFortranCellSeesNothingOfTheHost`).
+- **The evaluator is in the second core only**, with the parsers and R's evaluator, the rule R follows: `playground-ruby.wasm` is 66,213,879 bytes before and 67,554,836 with it (+1,340,957, +2.0%; 15,309,459 and 15,584,963 gzipped -9, +275,504, +1.8%). `playground.wasm` (30,311,872 bytes) is unchanged but for a 357-byte stub (7,475,177 and 7,474,893 gzipped). A notebook with a Fortran cell loads the second core, as for Ruby, R or Julia (go 1.27.4, `GOOS=js GOARCH=wasm`, `-trimpath -ldflags='-s -w'`). No lazily loaded third core: the second core is already loaded for the Fortran parser, and a third would only add a fetch.
+- The example: [`examples/notebook/7-fortran.md`](examples/notebook/7-fortran.md), the site's `#7-fortran` notebook, with real output.
 
 ### R cells: run in the page
 

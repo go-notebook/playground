@@ -200,6 +200,7 @@ func TestJuliaNotebooks(t *testing.T) {
 		// The same for C: the shipped example, a C cell after the one it reads,
 		// a syntax error, and a cell that is an error alone.
 		{name: "cexample", src: mustRead(t, "../../examples/notebook/6-c.md")},
+		{name: "fortranexample", src: mustRead(t, "../../examples/notebook/7-fortran.md")},
 		{name: "cok", src: "```c\ntypedef int myint;\n```\n```c\nmyint total = 2;\n```\n```go\nm := total\n```\n```go\n1 + 1\n```\n"},
 		{name: "csyntax", src: "```c\nint y = 2;\nint x = y y;\n```\n", err: "csyntax.md does not run", log: "csyntax.md:2: cell 0 failed:\nline 2:11: unexpected identifier, expected ';'"},
 		{name: "calone", src: "```c\nmyint v = 1;\n```\n", err: "calone.md does not run", log: "line 1:7: unexpected identifier"},
@@ -259,10 +260,10 @@ func TestFailed(t *testing.T) {
 func TestLanguages(t *testing.T) {
 	got, _ := json.Marshal(languages())
 	want := `[{"name":"go","label":"Go","runs":true,"core":"go"},` +
+		`{"name":"fortran","label":"Fortran","runs":true,"core":"ruby"},` +
 		`{"name":"r","label":"R","runs":true,"core":"ruby"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
 		`{"name":"c","label":"C","runs":false,"core":"ruby"},` +
-		`{"name":"fortran","label":"Fortran","runs":false,"core":"ruby"},` +
 		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)

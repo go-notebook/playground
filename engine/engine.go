@@ -166,6 +166,9 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 		case "r":
 			// R's variables stay R's (analysis.Isolated): nothing crosses.
 			out[i].Output, out[i].Display, out[i].Error = s.rCell(c.Source)
+		case analysis.Fortran:
+			// Fortran's modules and variables stay Fortran's (analysis.Isolated).
+			out[i].Output, out[i].Display, out[i].Error = s.fCell(c.Source)
 		default:
 			out[i].Output, out[i].Display, out[i].Error = s.cell(c.Source)
 			s.goDefines(c.Source)
@@ -191,6 +194,8 @@ type session struct {
 	ruby   *rubySide
 	// r is the R side (r.go), made by the first R cell.
 	r *rSide
+	// f is the Fortran side (fortran.go), made by the first Fortran cell.
+	f *fSide
 }
 
 // goDefines records the variables a Go cell defines: what the notebook
