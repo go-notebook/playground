@@ -77,7 +77,7 @@ func TestJuliaNeverReachesGoWhenRegisteredAsRunning(t *testing.T) {
 
 // Julia is check-only by language, not through the registry's Runs.
 func TestCheckOnly(t *testing.T) {
-	for lang, want := range map[string]bool{"julia": true, "c": true, "go": false, "ruby": false, "r": false} {
+	for lang, want := range map[string]bool{"julia": true, "c": true, "go": false, "ruby": false, "r": false, "fortran": false} {
 		if CheckOnly(lang) != want {
 			t.Errorf("CheckOnly(%q) = %v", lang, !want)
 		}
@@ -95,21 +95,5 @@ func TestJuliaAfterFailure(t *testing.T) {
 	res := Run("```go\npanic(\"x\")\n```\n```julia\nx = 1\n```\n")
 	if !strings.Contains(res[0].Error, "x") || !res[1].Skipped {
 		t.Errorf("%+v", res)
-	}
-}
-
-// Fortran cells run in go-notebook (v0.17.0) and are registered as running, but
-// this page links no Fortran runtime: they are checked, never sent to the Go
-// evaluator, like Julia's.
-func TestFortranIsCheckOnlyInThePage(t *testing.T) {
-	res := Run("```go\nn := 2\n```\n```fortran\ninteger :: k = 3\nprint *, k\n```\n```go\nn * 21\n```\n")
-	if res[1].Error != FortranNotRun || res[1].Status != StatusNotRun || res[1].Output != "" || len(res[1].Display) != 0 {
-		t.Errorf("the Fortran cell: %+v", res[1])
-	}
-	if res[2].Error != "" || res[2].Display[0]["text/plain"] != "42" {
-		t.Errorf("the Go cell after it: %+v", res[2])
-	}
-	if !CheckOnly("fortran") || notRunMessage("fortran") != FortranNotRun || !strings.Contains(blockedMessage("fortran", 4), "cell 4, a Fortran cell") {
-		t.Error("Fortran's messages")
 	}
 }

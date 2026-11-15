@@ -29,6 +29,18 @@ func (s *session) rCell(string) (string, []map[string]string, string) {
 	return "", nil, "this build runs Go cells only (in the page, the second core is loaded for a notebook with R cells)"
 }
 
+// FortranSupported reports whether this build runs Fortran cells: the default
+// core does not, the second one does (fortran.go).
+const FortranSupported = false
+
+type fSide struct{}
+
+// fCell is what the default core says of a Fortran cell; the page never sends
+// it one.
+func (s *session) fCell(string) (string, []map[string]string, string) {
+	return "", nil, "this build runs Go cells only (in the page, the second core is loaded for a notebook with Fortran cells)"
+}
+
 // JuliaSupported reports whether this build checks Julia cells: the default
 // core leaves go-embedded-julia's parser out (2 MB), and the page loads the
 // core built with the tag ruby, which has it, for a notebook with a Julia
