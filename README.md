@@ -110,16 +110,24 @@ A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.co
   - A Ruby cell's methods and constants stay Ruby's, and so does a local named like a Go builtin (`len`).
 - **Errors** read as for Go cells: `line 2: divided by 0 (ZeroDivisionError)`, then `at line N` for each frame in the cell.
 
+### Versions of the languages in the page
+
+go-notebook v0.18.0 (this page), with go-embedded-r v0.17.1 for R (it runs in the page), go-embedded-julia's parser v0.15.0 for Julia (checked, not run: *Julia cells run in go-notebook, not yet in the browser*), and Fortran checked, not run.
+
 ### Julia cells: checked, not run in the page
 
 A ` ```julia ` cell is parsed and checked as in [go-notebook](https://github.com/go-notebook/notebook#julia-cells), with [go-embedded-julia](https://github.com/go-embedded-julia/julia)'s parser compiled to WebAssembly. It does not run in the page, although go-notebook runs Julia cells since its `jcells` (the kernel boots from a Base image fetched at run time, which a page cannot do): `engine.CheckOnly` makes Julia check-only by language, not through go-notebook's `analysis.RunOf`, so a Julia cell never reaches the Go evaluator, whichever go-notebook release the page is built with.
 
 - Its badge reads *Julia · not runnable yet*.
 - A syntax error is shown at its line and column, with julia's message: ``line 2:8: syntax error: Expected `)` or `,` ``.
-- A cell without one is not run, by design, and says *Julia cells run in go-notebook, not yet in the browser*. The result carries a typed `status`: `notrun` for that cell, `blocked` for a cell that reads what a Julia cell defines, where the go-notebook release in use still has such an edge (it has none once Julia is `Isolated`, as in the release after v0.17.0). Neither is a failure: the page shows them in the neutral style, and `cmd/build` accepts them (`notrun` for a Julia cell only), so a site can publish a Julia example. A syntax error in a Julia cell, and any failure in a Go or Ruby cell, still fail the build.
+- A cell without one is not run, by design, and says *Julia cells run in go-notebook, not yet in the browser*. The result carries a typed `status`: `notrun` for that cell, `blocked` for a cell that reads what a Julia cell defines, where the go-notebook release in use has such an edge (none in go-notebook v0.18.0, where Julia is `Isolated`, the release this page is built with; v0.15.0 and a release in which Julia variables cross again have it). Neither is a failure: the page shows them in the neutral style, and `cmd/build` accepts them (`notrun` for a Julia cell only), so a site can publish a Julia example. A syntax error in a Julia cell, and any failure in a Go or Ruby cell, still fail the build.
 - The example: [`examples/notebook/4-julia.md`](examples/notebook/4-julia.md), the site's `#4-julia` notebook. A Julia cell and a Go cell that runs alone; its prose says Julia cells are checked, not run, in the page, and run in go-notebook.
 - The other cells run.
 - **The page checks Julia cells with the second core.** The page loads it for a notebook with a Julia cell, as for a Ruby one, and the status line says *Loading the Julia parser…*. The parser added 1.0 MB to `playground-ruby.wasm` (0.28 MB gzipped, +2.2%). `playground.wasm` does not carry it: since playground v0.10.0, only the second core imports go-notebook's `analysis/parsers` (v0.9.0), which links the Julia and R parsers. The default core still knows both languages' names, so its menus and edits offer them ([#23](https://github.com/go-notebook/playground/issues/23): playground v0.8.0 and v0.9.0 linked both parsers into it, 1.4 MB). About 0.29 MB of the parser packages' `init` tables remains in it, because go-notebook's `analysis` imports those packages. `web/test/page.mjs` checks the badge, the blocked cell and the independent one.
+
+### Fortran cells: checked, not run in the page
+
+go-notebook v0.17.0 runs ` ```fortran ` cells (`fcells`), and registers them as running; this page links no Fortran runtime. `engine.CheckOnly` makes Fortran check-only by language, as Julia is, so a Fortran cell is parsed and checked (the parser rides the second core with the others) and says *Fortran cells run in go-notebook, not yet in the browser*, with the badge *Fortran · not runnable yet*; it never reaches the Go evaluator (`TestFortranIsCheckOnlyInThePage`). The + menu offers it.
 
 ### R cells: run in the page
 

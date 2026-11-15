@@ -262,6 +262,7 @@ func TestLanguages(t *testing.T) {
 		`{"name":"r","label":"R","runs":true,"core":"ruby"},` +
 		`{"name":"ruby","label":"Ruby","runs":true,"core":"ruby"},` +
 		`{"name":"c","label":"C","runs":false,"core":"ruby"},` +
+		`{"name":"fortran","label":"Fortran","runs":false,"core":"ruby"},` +
 		`{"name":"julia","label":"Julia","runs":false,"core":"ruby"}]`
 	if string(got) != want {
 		t.Errorf("languages() = %s, want %s", got, want)

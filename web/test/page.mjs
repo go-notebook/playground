@@ -474,7 +474,7 @@ async function editingChecks(page) {
   await page.click('#add-end');
   const kinds = await page.$$eval('.add-menu:not([hidden]) button', (bs) => bs.map((b) => b.textContent));
   console.log('add menu: ' + kinds.join(', '));
-  if (kinds.join() !== 'Go (as above),R,Ruby,C · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
+  if (kinds.join() !== 'Go (as above),R,Ruby,C · not runnable yet,Fortran · not runnable yet,Julia · not runnable yet,Markdown') fail('the + menu offers ' + kinds.join(', '));
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;
