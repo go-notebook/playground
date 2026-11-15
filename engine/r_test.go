@@ -144,11 +144,8 @@ func TestPageRLimits(t *testing.T) {
 	if RLimits.MaxAlloc <= 0 || RLimits.MaxAlloc > 512<<20 || RLimits.MaxSteps <= 0 || RLimits.MaxSteps > nbruntime.DefaultRLimits.MaxSteps {
 		t.Errorf("limits %+v are not bounded as the default's", RLimits)
 	}
-	// The nesting bound is the page's, under the browser's call stack, and a
-	// recursion the bound allows still runs.
-	if RDepth <= 0 || RDepth > 300 {
-		t.Errorf("RDepth %d: the browser's call stack overflows well before go-embedded-r's 5000", RDepth)
-	}
+	// The nesting bound is go-embedded-r's (300 under wasm since v0.17.1, which
+	// the browser test checks), and a recursion the bound allows still runs.
 	res := Run("```r\nf <- function(n) if (n == 0) 0 else 1 + f(n - 1)\nf(60)\n```\n```r\ng <- function(n) sapply(1, function(i) g(n + 1))\ng(1)\n```\n")
 	if res[0].Output != "[1] 60\n" || res[0].Error != "" || !strings.HasPrefix(res[1].Error, "Error: evaluation nested too deeply") {
 		t.Errorf("recursion: %+v", res)
