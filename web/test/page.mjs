@@ -1197,7 +1197,9 @@ try {
     if (!got.equals(file)) fail(`${name}: Download is not the notebook byte for byte (${got.length} bytes, the file ${file.length})`);
     // Running one cell runs the cells above it, never more: not slower than
     // running them all.
-    if (!timed && firstJulia < 0) {
+    // (on a notebook of Go cells alone: another language's cells take milliseconds
+    // that vary on a loaded machine, which the Julia example used to absorb)
+    if (!timed && firstJulia < 0 && !ruby && !badges.want.some((w) => !/^Go$/.test(w))) {
       timed = true;
       const one = [];
       const all = [];
