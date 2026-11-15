@@ -47,7 +47,7 @@ func (k *checker) cell(i int) (msg string, checked bool) {
 	lang, src := k.cells[i].Lang, k.cells[i].Source
 	errs := k.g.Cells[i].Errors
 	if len(errs) == 0 {
-		return analysis.RunOf(lang).NotRun, true
+		return notRunMessage(lang), true
 	}
 	e := errs[0]
 	pos := min(max(e.Pos, 0), len(src)) // a parser's offset is never trusted
@@ -61,7 +61,7 @@ func (k *checker) cell(i int) (msg string, checked bool) {
 // dependency graph.
 func (k *checker) blocked() map[int]int {
 	cells, g := k.cells, k.g
-	runs := func(i int) bool { return analysis.RunOf(cells[i].Lang).Runs }
+	runs := func(i int) bool { return !CheckOnly(cells[i].Lang) }
 	blocked := map[int]int{}
 	// Until nothing changes: a cell may read one after it, and a notebook
 	// with errors has no complete order to follow.

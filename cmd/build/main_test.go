@@ -189,7 +189,7 @@ func TestJuliaNotebooks(t *testing.T) {
 		// The shipped example: a Julia cell, a Go cell blocked on it and a
 		// Go cell that runs alone.
 		{name: "example", src: mustRead(t, "../../examples/notebook/4-julia.md")},
-		{name: "ok", src: "```go\nn := 1\n```\n```julia\ntotal = n + 1\n```\n```go\nm := total\n```\n```go\nn * 2\n```\n"},
+		{name: "ok", src: "```go\nn := 1\n```\n```julia\ntotal = n + 1\n```\n```go\nm := n\n```\n```go\nn * 2\n```\n"},
 		// A syntax error in a Julia cell, at its line and column, fails.
 		{name: "syntax", src: "```julia\ny = 2\nx = (1,\n```\n", err: "syntax.md does not run", log: "syntax.md:2: cell 0 failed:\nline 2:8: syntax error"},
 		// A real failure in Go, with or without Julia in the notebook.

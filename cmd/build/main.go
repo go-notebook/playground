@@ -354,7 +354,7 @@ func languages() []language {
 		if name == analysis.Go {
 			core = "go"
 		}
-		out = append(out, language{Name: name, Label: label(name), Runs: analysis.RunOf(name).Runs, Core: core})
+		out = append(out, language{Name: name, Label: label(name), Runs: !engine.CheckOnly(name), Core: core})
 	}
 	// The menus' order: Go, the default, then the languages that run, then
 	// those only checked; by name within each.
@@ -392,9 +392,9 @@ func cellFailed(r engine.Result, lang string) bool {
 	}
 	switch r.Status {
 	case engine.StatusNotRun:
-		return analysis.RunOf(lang).Runs
+		return !engine.CheckOnly(lang)
 	case engine.StatusBlocked:
-		return !analysis.RunOf(lang).Runs
+		return engine.CheckOnly(lang)
 	}
 	return true
 }
