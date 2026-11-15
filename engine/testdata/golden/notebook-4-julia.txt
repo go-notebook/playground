@@ -1,10 +1,7 @@
 == cell 0 (line 8)
 == cell 1 (line 14)
 -- notrun
-Julia cells are parsed and checked, but not run yet: execution arrives with go-embedded-julia's runtime (milestone M3)
+Julia cells run in go-notebook, not yet in the browser
 == cell 2 (line 21)
--- blocked
-blocked: it depends on cell 1, a Julia cell, and Julia cells are not run yet
-== cell 3 (line 27)
 -- show
 20

@@ -143,7 +143,7 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 		// A cell of a check-only language (Julia, R, C) is checked, never
 		// run, and so are the cells that read it: each says why, and the
 		// others run.
-		if !analysis.RunOf(c.Lang).Runs {
+		if CheckOnly(c.Lang) {
 			msg, checked := chk.cell(i)
 			out[i].Error = msg
 			if checked {
@@ -152,7 +152,7 @@ func RunUpTo(markdown string, last int, started func(cell int)) []Result {
 			continue
 		}
 		if j, ok := blocked[i]; ok {
-			out[i].Error = analysis.RunOf(cells[j].Lang).Blocked(j)
+			out[i].Error = blockedMessage(cells[j].Lang, j)
 			out[i].Status = StatusBlocked
 			continue
 		}

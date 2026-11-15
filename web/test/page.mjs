@@ -280,7 +280,7 @@ async function carouselChecks() {
 // The check-only languages, as their examples show them: the fence word, the
 // badge's name, the start of the not-run message and the site the prose links.
 const CHECKED = {
-  Julia: { lang: 'julia', text: 'Julia cells are parsed and checked, but not run yet', site: 'https://go-embedded-julia.github.io/', error: /line 2:8: syntax error/ },
+  Julia: { lang: 'julia', text: 'Julia cells run in go-notebook, not yet in the browser', site: 'https://go-embedded-julia.github.io/', error: /line 2:8: syntax error/ },
   C: { lang: 'c', text: 'C cells are not run yet', site: 'https://github.com/go-embedded-c/c', error: /line 2:11: unexpected identifier/ },
 };
 
@@ -311,7 +311,8 @@ async function checkedExampleChecks(page, name, label) {
   console.log(`${name}: ${label} example: ${own.length} ${label}, ${blocked.length} blocked, ${alone.length} independent`);
   if (!own.length || own.some((c) => !c.out.includes(text) || !c.notRunStyle || c.failStyle))
     fail(`${name}: a ${label} cell should say it is checked, not run, and not look failed: ` + JSON.stringify(own));
-  if (!blocked.length || blocked.some((c) => !c.notRunStyle || c.failStyle))
+  // Julia variables stay in Julia (go-notebook's analysis.Isolated): no cell is blocked on a Julia cell.
+  if (label !== 'Julia' && (!blocked.length || blocked.some((c) => !c.notRunStyle || c.failStyle)))
     fail(`${name}: no Go cell is blocked on the ${label} cell, or it looks failed: ` + JSON.stringify(r.cells));
   if (!alone.length) fail(`${name}: no Go cell runs independently of the ${label} cell: ` + JSON.stringify(r.cells));
   if (!/checked, not run/.test(r.prose) || !r.links.includes(site))
@@ -531,10 +532,12 @@ async function editingChecks(page) {
   console.log('round trip: ' + (again === moved ? 'byte for byte' : 'DIFFERS'));
   if (again !== moved) fail('download, open, download changed the file: ' + JSON.stringify(again));
 
-  // A cell switched to Julia is checked, not run, and the cell that reads it
-  // is blocked, as a ```julia cell is; switched back, it is Go again. (x = 21
-  // is Julia, and not Go: the text is never translated.)
-  await openFile(page, 'jl.md', '```go\nx = 21\n```\n```go\nx * 2\n```\n');
+  // A cell switched to Julia is checked, not run; switched back, it is Go
+  // again. (x = 21 is Julia, and not Go: the text is never translated. The
+  // second cell reads nothing from the first: Julia variables stay in Julia in
+  // go-notebook's newer releases, so a reader of x would be blocked in v0.15.0
+  // and an undefined name after it, and the test holds under both.)
+  await openFile(page, 'jl.md', '```go\nx = 21\n```\n```go\n2 * 21\n```\n');
   await waitDone(page);
   await settle(page);
   await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('julia');
@@ -545,13 +548,13 @@ async function editingChecks(page) {
   cells = await codeState(page);
   console.log('after Go -> Julia: ' + JSON.stringify(cells.map((c) => [c.lang, c.out.slice(0, 50)])));
   const jbadge = await page.$eval(CODE_BADGES, (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
-  if (cells[0].lang !== 'julia' || jbadge !== 'Julia · not runnable yet' || !cells[0].out.includes('not run yet') || !cells[1].out.includes('blocked: it depends on cell 0, a Julia cell'))
+  if (cells[0].lang !== 'julia' || jbadge !== 'Julia · not runnable yet' || !cells[0].out.includes('not yet in the browser'))
     fail('Go -> Julia: ' + jbadge + ' ' + JSON.stringify(cells));
-  if ((await downloadBytes(page)).toString() !== '```julia\nx = 21\n```\n```go\nx * 2\n```\n') fail('the Julia fence is not in the file');
+  if ((await downloadBytes(page)).toString() !== '```julia\nx = 21\n```\n```go\n2 * 21\n```\n') fail('the Julia fence is not in the file');
   await settle(page);
   await page.locator(CODE_CELLS).first().locator('.lang-select').selectOption('go');
   await waitDone(page);
-  if ((await downloadBytes(page)).toString() !== '```go\nx = 21\n```\n```go\nx * 2\n```\n') fail('Julia -> Go did not give the file back');
+  if ((await downloadBytes(page)).toString() !== '```go\nx = 21\n```\n```go\n2 * 21\n```\n') fail('Julia -> Go did not give the file back');
 
   // Open refuses a file over 1 MiB, and says so
   await openFile(page, 'big.md', Buffer.alloc((1 << 20) + 1, 0x61));
@@ -752,14 +755,14 @@ try {
   if (langs.injected) fail('a fence\'s info string became markup');
   if (langs.cells.join() !== 'Go') fail('the Go cell after them: ' + JSON.stringify(langs.cells));
 
-  // A Julia cell is checked, not run: its badge says so, the cell that reads
-  // it is blocked, the other runs; the core with the Julia parser is loaded.
+  // A Julia cell is checked, not run: its badge says so, the other cells run, none
+  // reading it (see above); the core with the Julia parser is loaded.
   await page.evaluate(() => (document.body.dataset.state = 'switching'));
   const tj = Date.now();
   await page.setInputFiles('#open', {
     name: 'julia.md',
     mimeType: 'text/markdown',
-    buffer: Buffer.from('# julia\n\n```julia\ntotal = sum(1:10)\n```\n\n```go\ntotal + 1\n```\n\n```go\n2 * 21\n```\n'),
+    buffer: Buffer.from('# julia\n\n```julia\ntotal = sum(1:10)\n```\n\n```go\n1 + 1\n```\n\n```go\n2 * 21\n```\n'),
   });
   await page.waitForSelector('body[data-state="done"], body[data-state="error"]', { timeout: 180000 });
   const jl = await page.evaluate(() => {
@@ -773,9 +776,8 @@ try {
   console.log(`julia: ${Date.now() - tj} ms; ` + jl.map((c) => `${c.badge} [${c.out}]`).join(' | '));
   if (jl.length !== 3) fail('julia: ' + JSON.stringify(jl));
   else {
-    if (jl[0].badge !== 'Julia · not runnable yet' || jl[0].runnable !== 'no' || !jl[0].out.includes('Julia cells are parsed and checked, but not run yet'))
+    if (jl[0].badge !== 'Julia · not runnable yet' || jl[0].runnable !== 'no' || !jl[0].out.includes('Julia cells run in go-notebook, not yet in the browser'))
       fail('the Julia cell: ' + JSON.stringify(jl[0]));
-    if (!jl[1].out.includes('blocked: it depends on cell 0, a Julia cell')) fail('the cell reading the Julia cell: ' + JSON.stringify(jl[1]));
     if (!jl[2].out.includes('42')) fail('the independent cell: ' + JSON.stringify(jl[2]));
   }
 
