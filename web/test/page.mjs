@@ -522,6 +522,8 @@ async function fortranLimitChecks() {
   // keep() makes a local array of 2^25 integers (256 MiB counted); with
   // pointer, a module pointer is left associated with it
   const aliasBomb = (pointer) => '```fortran\nmodule m\ninteger, pointer :: p(:)\ncontains\nsubroutine keep()\ninteger, target :: a(2**25)\n' + (pointer ? 'p => a\n' : '') + 'end subroutine\nend module\n```\n```fortran\nuse m\ncall keep()\n```\n```fortran\ninteger, allocatable :: b(:)\nallocate(b(2**25))\nprint *, size(b)\n```\n```fortran\nprint *, 1\n```\n';
+  const grabCases = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => `case (${k})\np${k} => n\n`).join('');
+  const scalarFrames = '```fortran\nmodule m\ninteger, pointer :: p1, p2, p3, p4, p5, p6, p7, p8\ncontains\nsubroutine grab(k)\ninteger :: k\ninteger, target :: n\nreal(8) :: big(50000000)\nbig(1) = 1\nn = k\nselect case (k)\n' + grabCases + 'end select\nend subroutine\nend module\n```\n```fortran\nuse m\ninteger :: k\ndo k = 1, 8\ncall grab(k)\nend do\nprint *, p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8\n```\n';
   const hard = [
     ['deep recursion, 13 DO/IF pairs per frame, infinite', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(100000)\n```\n', /nested calls/, 1],
     ['deep recursion, 13 DO/IF pairs per frame, 45 deep still runs', '```fortran\n' + heavy + '\n```\n```fortran\nuse m\nprint *, f(45)\n```\n', /^45$/, 1, true],
@@ -539,6 +541,13 @@ async function fortranLimitChecks() {
     // heap; v0.27.0 credited it and let the next 256 MiB through)
     ['memory bomb, a local array kept by a module pointer', aliasBomb(true), /memory limit exceeded/, 2],
     ['the same local array with no pointer to it is credited', aliasBomb(false), /^33554432$/, 2, true],
+    // go-notebook's review of v0.29.0: a scalar pointer to a local scalar held
+    // the procedure's whole frame, so eight calls with a 400 MB local array,
+    // each leaving a module pointer on a local scalar, kept 3.2 GB alive with
+    // the counter at 0. Since fortran v0.30.0 the scalar moves into an 8-byte
+    // box when its frame returns: each 400 MB is freed and credited, and the
+    // eight calls run in the 512 MiB budget without killing the core
+    ['eight 400 MB frames, each left with a module pointer on a local scalar', scalarFrames, /^36$/, 1, true],
   ];
   for (const [what, md, want, idx, ok] of hard) {
     const workers = await page.evaluate(() => window.playgroundWorkers);
