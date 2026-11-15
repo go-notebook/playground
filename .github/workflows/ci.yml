@@ -92,6 +92,9 @@ jobs:
       - run: node web/test/page.mjs site/statistics
       - run: node web/test/page.mjs site/numerics
       - run: node web/test/page.mjs site/notebook
+      # The page a visitor gets: with the code editor served, the cells are
+      # canvases and the editing checks drive the editor's text layer.
+      - run: node web/test/page.mjs --editor site/notebook
       # The code editor on the real page: the runner image has Google Chrome. A
       # test that skipped for want of it (or of PLAYGROUND_SITE) would pass here
       # and prove nothing, so the job requires each PASS line.

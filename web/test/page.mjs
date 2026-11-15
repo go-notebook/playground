@@ -6,7 +6,8 @@
 // still under prefers-reduced-motion.
 //
 //   node web/test/page.mjs <directory>   serve a built playground locally
-//   node web/test/page.mjs <url>         check a deployed one
+//   node web/test/page.mjs --editor <directory>   ... with the code editor
+//   node web/test/page.mjs <url>         check a deployed one (it has the editor)
 //
 // It prints how long the runtime took to start and the first result to
 // appear, counted from the start of the page load. It takes no screenshot.
@@ -16,9 +17,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const target = process.argv[2];
+const withEditor = process.argv.includes('--editor');
+const target = process.argv.slice(2).find((a) => !a.startsWith('--'));
 if (!target) {
-  console.error('usage: node page.mjs <directory | url>');
+  console.error('usage: node page.mjs [--editor] <directory | url>');
   process.exit(2);
 }
 
@@ -33,11 +35,13 @@ if (!/^https?:/.test(target)) {
     const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     const p = path.join(target, name);
     const file = fs.existsSync(p) && fs.statSync(p).isDirectory() ? path.join(p, 'index.html') : p;
-    // This check drives the page as a <textarea> page: the code editor that
-    // replaces the textareas (editor.wasm) is not served here, which is also
-    // the page a visitor gets when it fails to load. The editor has its own
-    // browser test, browsertest/ (chromedp), which drives the real page with it.
-    if (!fs.existsSync(file) || path.basename(name) === 'editor.wasm') {
+    // By default this check drives the page as a <textarea> page: the code
+    // editor that replaces the textareas (editor.wasm) is not served here,
+    // which is also the page a visitor gets when it fails to load. With
+    // --editor it is served, as on a deployed page, and the editing checks
+    // drive the editor's text layer. The editor has its own browser test,
+    // browsertest/ (chromedp).
+    if (!fs.existsSync(file) || (path.basename(name) === 'editor.wasm' && !withEditor)) {
       res.writeHead(404).end();
       return;
     }
@@ -516,6 +520,18 @@ const codeState = (page) =>
     cs.map((c) => ({ lang: c.dataset.lang, out: (c.querySelector('.outputs').textContent || '').trim(), note: (c.querySelector('.cell-note') || {}).textContent || '' }))
   );
 
+// What takes a code cell's keystrokes. A code cell is a <textarea> until the
+// code editor (editor.wasm) has loaded, then a canvas whose accessible
+// surface is webcanvas's: the text layer (a div with role="textbox", named for
+// the cell, data-webcanvas-layer) or its a11y mirror (data-webcanvas-mirror),
+// which is what the focus lands on when the page focuses the cell (the layer
+// after a click). A deployed page has the editor, the local
+// build here does not (unless run with --editor); this test drives either, the
+// way a keyboard or a screen reader reaches it, and reads the cell's text from
+// the textarea the page keeps as its record of the cell (the editor writes
+// every change to it).
+// (The expression is written out where it is used: it runs in the page.)
+
 // A visitor adds a Ruby cell, types into it, runs it, makes it Go, deletes
 // and brings it back, moves it, and downloads the notebook, which reads back
 // byte for byte; all from the + control, the cell's own controls and
@@ -524,6 +540,13 @@ async function editingChecks(page) {
   const start = '# edit\n\nSome text.\n\n~~~go {.opt}\nx := 21\n~~~\n';
   await openFile(page, 'edit.md', start);
   await waitDone(page);
+  // a deployed page, or --editor, has the code editor: say so, so that a page
+  // that lost it (or a test that no longer reaches it) is a failure, not a pass
+  if (withEditor || !server) {
+    const up = await page.waitForFunction(() => window.playgroundEditor && [...window.playgroundEditor.surfaces].some((s) => s.mounted), null, { timeout: 120000 }).then(() => true, () => false);
+    if (!up) fail('the code editor did not load: the cells are still text areas');
+    else console.log('code editor: on its canvases, cells edited through its text layer');
+  }
   // prose shows as text until Edit (or Enter on it) opens its editor
   const proseEditors = await page.$$eval('.prose-cell textarea', (ts) => ts.filter((t) => t.offsetParent !== null).length);
   if (proseEditors) fail(`${proseEditors} prose editors are open before anyone asked`);
@@ -542,12 +565,18 @@ async function editingChecks(page) {
   await page.click('.add-menu:not([hidden]) button[data-kind="ruby"]');
   await page.waitForFunction(() => {
     const a = document.activeElement;
-    return a && a.tagName === 'TEXTAREA' && a.closest('.cell').dataset.lang === 'ruby';
+    const keys = !!a && (a.tagName === 'TEXTAREA' || a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror'));
+    return keys && a.closest('.cell').dataset.lang === 'ruby';
   });
   const mode = await page.evaluate(() => document.activeElement.closest('.cell').querySelector('.mode').textContent);
   if (!/^editing/.test(mode)) fail('a cell being edited does not say so: ' + mode);
   await page.keyboard.type('x * 2');
   await settle(page);
+  // The editor's first keystroke hands the focus from its a11y mirror to its
+  // text layer, about 100-200 ms later; a Shift+Enter that lands before that
+  // inserts a line break (a person does not type that fast; the typed text is
+  // not at risk). Wait for the layer, as browsertest/ does.
+  await page.waitForFunction(() => !document.activeElement.hasAttribute('data-webcanvas-mirror'));
   await page.keyboard.press('Shift+Enter'); // run it, and move on
   await waitDone(page);
   let cells = await codeState(page);
@@ -574,7 +603,11 @@ async function editingChecks(page) {
   // B adds a cell below in the language above, Esc selects it, D D deletes it
   await page.evaluate((s) => [...document.querySelectorAll(s)].pop().focus(), CODE_CELLS);
   await page.keyboard.press('b');
-  await page.waitForFunction((s) => document.querySelectorAll(s).length === 3 && document.activeElement.tagName === 'TEXTAREA', CODE_CELLS);
+  await page.waitForFunction((s) => {
+    const a = document.activeElement;
+    const keys = !!a && (a.tagName === 'TEXTAREA' || a.hasAttribute('data-webcanvas-layer') || a.hasAttribute('data-webcanvas-mirror'));
+    return document.querySelectorAll(s).length === 3 && keys;
+  }, CODE_CELLS);
   await page.keyboard.press('Escape');
   await page.keyboard.press('d');
   await page.keyboard.press('d');
