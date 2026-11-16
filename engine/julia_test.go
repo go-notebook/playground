@@ -470,3 +470,27 @@ func TestJuliaResetReloadsOrFails(t *testing.T) {
 		t.Errorf("a Reset that fails and a boot that fails: %+v", res[0])
 	}
 }
+
+// EXPECTED TO FAIL (XFAIL), pending go-embedded-julia: Kernel.Reset neither ends
+// nor waits for the tasks and timers a cell started (kernelreset.go, "what it does
+// not undo"). Run 1 starts a task that sleeps 0.5 s and yields once, so the task
+// is parked on its timer; run 2 sleeps 1 s. Measured on v0.19.0: the task of run 1
+// wakes in run 2, which fails ("not ported yet: ccall(:jl_get_backtrace)") instead
+// of printing "done" (a task that never ran, because run 1 did not yield, is
+// dropped by the Reset and does no harm; "ghost" itself has not been seen). Before
+// the Reset the worker was replaced after each run and the task died with it.
+//
+// The test passes while run 2 is polluted (an error, or "ghost" in its output),
+// and FAILS when it is clean: upstream fixed it (Reset ends tasks and timers), so
+// assert here that run 2 is exactly "done" and drop the expectation.
+func TestJuliaTaskOfAnEarlierRunDoesNotReachTheNext(t *testing.T) {
+	noKernel(t)
+	if res := Run("```julia\n@async (sleep(0.5); println(\"ghost\"))\nsleep(0.01)\nnothing\n```\n"); res[0].Error != "" {
+		t.Fatal(res[0].Error)
+	}
+	res := Run("```julia\nsleep(1)\nprintln(\"done\")\n```\n")
+	if res[0].Error == "" && !strings.Contains(res[0].Output, "ghost") && res[0].Output == "done\n" {
+		t.Fatal("XFAIL no longer fails: run 2 is clean, the task of run 1 did not reach it; Reset ends tasks now: assert run 2 is exactly \"done\" and remove this expectation")
+	}
+	t.Logf("XFAIL, as expected: run 2 is polluted by the task of run 1: output %q, error %q", res[0].Output, res[0].Error)
+}

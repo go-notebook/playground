@@ -1104,6 +1104,26 @@ async function juliaChecks(name) {
       const after = await run('1 + 2');
       if (after[0].out !== '3') fail(`after Julia recursion ${what}, the next run: ` + JSON.stringify(after));
     }
+    // 1g. EXPECTED TO FAIL (XFAIL), pending go-embedded-julia: Kernel.Reset does not
+    // end the tasks and timers a cell started. Run 1 starts a task that sleeps 0.5 s
+    // and yields once; run 2 sleeps 1 s. The task of run 1 wakes in run 2 and breaks
+    // it (an error, or "ghost" in its output), where before the Reset the worker was
+    // replaced after each run and the task died with it. The check passes while run
+    // 2 is polluted (XFAIL) and FAILS when it is clean: upstream fixed it, so assert
+    // that run 2 is exactly "done" and drop the expectation. It is last of the Julia
+    // runs because the kernel stays broken after it ("val already in a list" in the
+    // runs that follow, measured), which is part of the same defect.
+    {
+      const run = async (src) => {
+        await openFile(page, 'ghost.md', '```julia\n' + src + '\n```\n');
+        await page.waitForSelector(DONE, { timeout: 180000 });
+        return (await codeState(page))[0].out;
+      };
+      await run('@async (sleep(0.5); println("ghost"))\nsleep(0.01)\nnothing');
+      const ghost = await run('sleep(1)\nprintln("done")');
+      if (ghost === 'done') fail('XFAIL no longer fails: run 2 is clean, the task of run 1 did not reach it; Reset ends tasks now: assert run 2 is exactly "done" and remove this expectation');
+      else console.log('Julia XFAIL, as expected: run 2 is polluted by the task of run 1: ' + JSON.stringify(ghost.slice(0, 120)));
+    }
     // Every boot of a kernel keeps memory in the instance until it ends (about
     // 250 MiB), and a Reset keeps none: over the more than fifty runs above no
     // worker is replaced.
