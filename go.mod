@@ -3,10 +3,10 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-embedded-julia/julia v0.17.0
+	github.com/go-embedded-julia/julia v0.18.0
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.40.3
-	github.com/go-notebook/notebook v0.20.0
+	github.com/go-notebook/notebook v0.21.0
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.3.1
 	github.com/go-numerics/special v0.2.0
@@ -91,6 +91,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a // indirect
 	github.com/go-bignum/bigfloat v0.2.0 // indirect
+	github.com/go-blas/blas v0.1.0 // indirect
 	github.com/go-commonmark/commonmark v0.1.0 // indirect
 	github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 // indirect
 	github.com/go-composites/bag v0.0.0-20261017234052-8c0542744097 // indirect
@@ -316,7 +317,7 @@ require (
 	github.com/go-simd/adler32 v0.1.0 // indirect
 	github.com/go-simd/base64 v0.1.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
-	github.com/go-simd/floats v0.15.0 // indirect
+	github.com/go-simd/floats v0.17.0 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
