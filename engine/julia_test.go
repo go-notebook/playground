@@ -324,6 +324,20 @@ func TestJuliaFailures(t *testing.T) {
 	s.closeJulia() // nothing to close
 }
 
+// BreakJulia closes the kernel under the process, as a fault the next run must
+// survive: its Reset fails, a kernel is booted anew and the worker's replacement
+// is owed. It is a test's: a Reset that reloads the image needs over 260,000
+// logged writes, which no cell makes within the page's 20 million statements, so
+// the page cannot reach this path without a hook, and the shipped core has none.
+func BreakJulia() {
+	kernMu.Lock()
+	defer kernMu.Unlock()
+	if kern != nil {
+		kern.Close()
+		dirty = true
+	}
+}
+
 // forgetKernel closes the process's kernel, now and at the end of the test: a
 // test that changes the loader must not meet the kernel of another, nor leave
 // its own.

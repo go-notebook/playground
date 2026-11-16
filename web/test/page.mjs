@@ -948,10 +948,7 @@ async function juliaChecks(name) {
 
     // 1d. Runs with calls in flight. A burst of calls is kept in flight while the
     // run ends and runs follow at once: every one must work, and none replaces the
-    // worker (a Reset keeps the instance). Then a kernel that is broken under the
-    // worker, so that its next Reset fails: that run works (a kernel is booted
-    // anew), and the replacement it owes is made, once, made when idle or forced
-    // by the next run, whichever comes first.
+    // worker (a Reset keeps the instance).
     const replaced = () => page.evaluate(() => window.playgroundRecycles || 0);
     const rec0 = await replaced();
     const w1 = await page.evaluate(() => window.playgroundWorkers);
@@ -969,17 +966,10 @@ async function juliaChecks(name) {
     }
     await new Promise((r) => setTimeout(r, 1500));
     if ((await replaced()) !== rec0) fail(`Julia: ${(await replaced()) - rec0} worker replacements over three normal runs, none expected`);
-    // A Reset that fails: the next run still works, and owes exactly one replacement.
-    await page.evaluate(() => window.playgroundCall('break', {}));
-    await openFile(page, 'broken.md', '```julia\nstruct Q\n    x::Int\nend\nQ(8).x\n```\n');
-    await page.waitForSelector(DONE, { timeout: 180000 });
-    cells = await codeState(page);
-    if (cells.length !== 1 || cells[0].out !== '8') fail('Julia run after a kernel broke under the worker: ' + JSON.stringify(cells));
-    await page.waitForFunction((n) => (window.playgroundRecycles || 0) >= n, rec0 + 1, { timeout: 120000 }).catch(() => fail('the Julia worker was not replaced after a Reset that failed'));
-    await page.evaluate(() => window.playgroundMemory()); // answers when the new worker is ready
-    if ((await replaced()) !== rec0 + 1) fail(`a failed Reset owes one replacement, ${(await replaced()) - rec0} were made`);
-    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
-    console.log('Julia: a Reset that failed gave a correct run and exactly one worker replacement');
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia run was counted as a crash or a restart');
+    // (The replacement owed by a Reset that reloads the image or fails is not
+    // reachable from the page: it needs over 260,000 logged writes, and the shipped
+    // core has no hook to force it. engine's TestJuliaResetReloadsOrFails covers it.)
 
     // 1e. A Go-only run after a Julia run does not touch the kernel: no replacement,
     // no new fetch, and as fast as a Go run is.
@@ -1115,12 +1105,12 @@ async function juliaChecks(name) {
       if (after[0].out !== '3') fail(`after Julia recursion ${what}, the next run: ` + JSON.stringify(after));
     }
     // Every boot of a kernel keeps memory in the instance until it ends (about
-    // 250 MiB), and a Reset keeps none: over the more than fifty runs above the
-    // only replacement is the one the broken kernel (1d) owed.
+    // 250 MiB), and a Reset keeps none: over the more than fifty runs above no
+    // worker is replaced.
     const recycles = await page.evaluate(() => window.playgroundRecycles || 0);
     const finalMem = await page.evaluate(() => window.playgroundMemory());
     console.log(`Julia: ${recycles} planned worker replacements over the runs above; linear memory now ${(finalMem.wasm / 1048576).toFixed(0)} MiB; browser processes ${chromiumRssMB().toFixed(0)} MB resident, peak ${peak.toFixed(0)} MB (${before.toFixed(0)} MB before Julia)`);
-    if (recycles !== 1) fail(`Julia: ${recycles} worker replacements over more than fifty runs, one expected (the broken kernel's)`);
+    if (recycles !== 0) fail(`Julia: ${recycles} worker replacements over more than fifty runs, none expected`);
   } finally {
     clearInterval(sampler);
     await page.close();

@@ -185,12 +185,6 @@ onmessage = (e) => {
       postMessage({ type: 'result', id, json: JSON.stringify({ wasm: mem, image }), ms: 0 });
       return;
     }
-    if (op === 'break' && julia) {
-      // For the page's test: close the kernel, so that the next run's Reset fails.
-      self.playgroundJuliaBreak();
-      postMessage({ type: 'result', id, json: '{}', ms: 0 });
-      return;
-    }
     const json =
       op === 'parse'
         ? self.playgroundCells(markdown)

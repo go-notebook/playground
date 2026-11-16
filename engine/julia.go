@@ -124,20 +124,6 @@ func JuliaReplace() bool {
 	return replace
 }
 
-// BreakJulia closes the kernel under the process, as a fault the next run must
-// survive: its Reset fails, a kernel is booted anew and the worker's replacement
-// is owed. It is for the page's test of that path (a Reset that reloads the image
-// needs over 260,000 logged writes, which no cell can make within the page's
-// 20 million statements).
-func BreakJulia() {
-	kernMu.Lock()
-	defer kernMu.Unlock()
-	if kern != nil {
-		kern.Close()
-		dirty = true
-	}
-}
-
 // closeJulia ends the run's use of the kernel, which stays for the next run,
 // whose Reset gives it a Main of its own (a struct redefined by a second run
 // is not an error in it).

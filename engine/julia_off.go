@@ -26,9 +26,6 @@ func (s *session) jCell(string) (string, []map[string]string, string) {
 // closeJulia has nothing to close.
 func (s *session) closeJulia() {}
 
-// BreakJulia does nothing here: there is no kernel.
-func BreakJulia() {}
-
 // JuliaReplace is false here: no Julia cell runs.
 func JuliaReplace() bool { return false }
 
