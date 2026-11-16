@@ -92,7 +92,8 @@ func takeKernel() (*interp.Kernel, error) {
 }
 
 // used is set once a Julia cell has run in this process: it can boot no other
-// kernel safely (go-embedded-julia#92), and the page replaces the worker.
+// kernel for free: each boot keeps memory in the instance (about 250 MiB, and
+// the twelfth boot ran out of the 4 GiB), so the page replaces the worker.
 var used atomic.Bool
 
 // JuliaUsed reports whether a Julia cell has run in this process.

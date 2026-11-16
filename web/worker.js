@@ -195,11 +195,11 @@ onmessage = (e) => {
     if (julia && op === 'run' && self.playgroundJuliaUsed()) {
       // (Only a run that executed a Julia cell: a Go-only run leaves the kernel
       // waiting in this instance, which is as good as new.)
-      // This instance has run Julia: it never boots another kernel. A kernel that
-      // has run code mutates process-wide type state in go-embedded-julia, and a
-      // later LoadKernel in the same process can fail ("image is malformed"); and
-      // a kernel's memory does not come back to the instance (about a GiB a boot:
-      // the seventh ran out of the 4 GiB). So the page is asked to replace this
+      // This instance has run Julia: it boots no other kernel. Since
+      // go-embedded-julia v0.18.0 (#92) a second LoadKernel works, but a
+      // kernel's memory does not come back to the instance (about 250 MiB a boot
+      // as measured with v0.18.0, in steps: the twelfth run of one instance
+      // ran out of the 4 GiB). So the page is asked to replace this
       // worker, a new wasm instance with a fresh kernel, while it is idle.
       postMessage({ type: 'recycle' });
     }
