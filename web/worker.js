@@ -185,6 +185,12 @@ onmessage = (e) => {
       postMessage({ type: 'result', id, json: JSON.stringify({ wasm: mem, image }), ms: 0 });
       return;
     }
+    if (op === 'break' && julia) {
+      // For the page's test: close the kernel, so that the next run's Reset fails.
+      self.playgroundJuliaBreak();
+      postMessage({ type: 'result', id, json: '{}', ms: 0 });
+      return;
+    }
     const json =
       op === 'parse'
         ? self.playgroundCells(markdown)
@@ -192,15 +198,13 @@ onmessage = (e) => {
           ? self.playgroundEdit(markdown, JSON.stringify(ops))
           : self.playgroundRun(markdown, typeof last === 'number' ? last : -1);
     postMessage({ type: 'result', id, json, ms: performance.now() - t });
-    if (julia && op === 'run' && self.playgroundJuliaUsed()) {
-      // (Only a run that executed a Julia cell: a Go-only run leaves the kernel
-      // waiting in this instance, which is as good as new.)
-      // This instance has run Julia: it boots no other kernel. Since
-      // go-embedded-julia v0.18.0 (#92) a second LoadKernel works, but a
-      // kernel's memory does not come back to the instance (about 250 MiB a boot
-      // as measured with v0.18.0, in steps: the twelfth run of one instance
-      // ran out of the 4 GiB). So the page is asked to replace this
-      // worker, a new wasm instance with a fresh kernel, while it is idle.
+    if (julia && op === 'run' && self.playgroundJuliaReplace()) {
+      // Each Julia run starts with Kernel.Reset (go-embedded-julia v0.19.0): the
+      // kernel is as booted, in milliseconds, and the memory stays flat. Only a
+      // Reset that had to load the image again (the undo log overflowed) or
+      // failed leaves this instance holding a boot more (about 250 MiB, and a
+      // twelfth would run out of the 4 GiB): then the page is asked to replace
+      // this worker, a new wasm instance with a fresh kernel, while it is idle.
       postMessage({ type: 'recycle' });
     }
   } catch (err) {

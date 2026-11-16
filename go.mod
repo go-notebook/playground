@@ -3,7 +3,7 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-embedded-julia/julia v0.18.0
+	github.com/go-embedded-julia/julia v0.19.0
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.40.3
 	github.com/go-notebook/notebook v0.21.0

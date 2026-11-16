@@ -189,6 +189,7 @@ func TestJuliaLimitsAreThePages(t *testing.T) {
 // this fails: the cell would fall to the default, and yaegi would say what it
 // says of Julia source.
 func TestJuliaNeverReachesGo(t *testing.T) {
+	forgetKernel(t)
 	saved := loader
 	t.Cleanup(func() { loader = saved })
 	loader = func() (*interp.Kernel, error) { return nil, errors.New("no network") }
@@ -262,6 +263,7 @@ func TestJuliaFailures(t *testing.T) {
 	if _, err := interp.ParseDigest(JuliaImageDigest); err != nil || pinned == [32]byte{} {
 		t.Fatalf("the pinned digest: %v", err)
 	}
+	forgetKernel(t)
 	saved := juliaImage
 	t.Cleanup(func() { juliaImage = saved })
 	juliaImage = func() ([]byte, error) { return nil, errors.New("no image") }
@@ -322,27 +324,135 @@ func TestJuliaFailures(t *testing.T) {
 	s.closeJulia() // nothing to close
 }
 
-// A kernel booted ahead (WarmJulia, as the page does before it says the core is
-// ready) is the one the next run takes, once.
-func TestJuliaWarmKernel(t *testing.T) {
+// forgetKernel closes the process's kernel, now and at the end of the test: a
+// test that changes the loader must not meet the kernel of another, nor leave
+// its own.
+func forgetKernel(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		kernMu.Lock()
+		defer kernMu.Unlock()
+		if kern != nil {
+			kern.Close()
+		}
+		kern, dirty, replace = nil, false, false
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+// noKernel forgets the process's kernel and what is owed, and counts the loads
+// until the end of the test.
+func noKernel(t *testing.T) *int {
+	t.Helper()
 	bootsKernel(t)
 	saved := loader
+	forgetKernel(t)
 	t.Cleanup(func() { loader = saved })
-	n := 0
-	loader = func() (*interp.Kernel, error) { n++; return saved() }
+	n := new(int)
+	loader = func() (*interp.Kernel, error) { *n++; return saved() }
+	return n
+}
+
+// A kernel booted ahead (WarmJulia, as the page does before it says the core is
+// ready) is the one every run takes: no run boots another, each is reset.
+func TestJuliaWarmKernel(t *testing.T) {
+	n := noKernel(t)
 	if err := WarmJulia(); err != nil {
 		t.Fatal(err)
 	}
-	if err := WarmJulia(); err != nil || n != 1 {
-		t.Fatalf("a second warm-up loaded again: %d, %v", n, err)
+	if err := WarmJulia(); err != nil || *n != 1 {
+		t.Fatalf("a second warm-up loaded again: %d, %v", *n, err)
 	}
-	if res := Run("```go\n1 + 1\n```\n"); res[0].Error != "" || n != 1 {
-		t.Errorf("a Go-only run took the warm kernel: %d loads, %+v", n, res[0])
+	if res := Run("```go\n1 + 1\n```\n"); res[0].Error != "" || *n != 1 {
+		t.Errorf("a Go-only run took the warm kernel: %d loads, %+v", *n, res[0])
 	}
-	if res := Run("```julia\n1 + 1\n```\n"); res[0].Error != "" || n != 1 || !JuliaUsed() {
-		t.Errorf("the run did not take the warm kernel: %d loads, %+v", n, res[0])
+	for i := range 3 {
+		if res := Run("```julia\n1 + 1\n```\n"); res[0].Error != "" || *n != 1 || JuliaReplace() {
+			t.Errorf("run %d did not take the kernel: %d loads, %+v", i, *n, res[0])
+		}
 	}
-	if res := Run("```julia\n2 + 2\n```\n"); res[0].Error != "" || n != 2 {
-		t.Errorf("the next run loads its own: %d loads, %+v", n, res[0])
+}
+
+// Each run starts as the first of a kernel just booted: a global of the run
+// before is gone, a struct and a constant are defined again, a seeded run does
+// not change the first draw of the next, and no worker replacement is owed.
+func TestJuliaRunsAreReset(t *testing.T) {
+	n := noKernel(t)
+	run := func(src string) string {
+		res := Run("```julia\n" + src + "\n```\n")
+		if res[0].Error != "" {
+			return "ERROR " + res[0].Error
+		}
+		if len(res[0].Display) > 0 {
+			return res[0].Output + res[0].Display[0]["text/plain"]
+		}
+		return res[0].Output
+	}
+	first := run("rand()")
+	if first == "" || strings.HasPrefix(first, "ERROR") {
+		t.Fatalf("first draw: %q", first)
+	}
+	if seeded := run("using Random\nRandom.seed!(7)\nrand()"); seeded == first {
+		t.Fatalf("a seeded draw %q is the first draw", seeded)
+	}
+	// the next run's first draw is the kernel's first draw again, as if just booted
+	if got := run("rand()"); got != first {
+		t.Errorf("first draw %q, after a seeded run %q", first, got)
+	}
+	run("g1 = 5\nstruct P\n    x::Int\nend\nconst K = 1\nnothing")
+	if got := run("g1"); !strings.HasPrefix(got, "ERROR") {
+		t.Errorf("a global of an earlier run is still there: %q", got)
+	}
+	// a struct and a const defined again do not fail
+	for range 2 {
+		if got := run("struct P\n    x::Int\nend\nconst K = 2\nP(21).x * K"); got != "42" {
+			t.Errorf("redefinition: %q", got)
+		}
+	}
+	if *n != 1 || JuliaReplace() {
+		t.Errorf("%d loads, replacement owed %v: a plain run reloads nothing", *n, JuliaReplace())
+	}
+}
+
+// A Reset that has to load the image again (the cells changed more than the undo
+// log holds) leaves a replacement owed, and so does a Reset that fails, which
+// boots a kernel anew; a kernel that cannot be booted again is the run's error.
+func TestJuliaResetReloadsOrFails(t *testing.T) {
+	n := noKernel(t)
+	savedLimits := JuliaLimits
+	t.Cleanup(func() { JuliaLimits = savedLimits })
+	JuliaLimits.MaxSteps, JuliaLimits.Timeout = 2_000_000_000, 5*time.Minute // the page's bound is for a runaway; this cell writes 300000 elements
+	// (writes to a vector of Base, which is older than the kernel's cut: a write
+	// to what the cell allocated itself is not logged)
+	big := "for i in 1:300000\n    push!(Base.DEPOT_PATH, \"x\")\nend\nnothing"
+	if res := Run("```julia\n" + big + "\n```\n"); res[0].Error != "" {
+		t.Fatal(res[0].Error)
+	}
+	if JuliaReplace() {
+		t.Fatal("a replacement is owed before any Reset")
+	}
+	if res := Run("```julia\n1 + 1\n```\n"); res[0].Error != "" || res[0].Display[0]["text/plain"] != "2" {
+		t.Fatalf("the run after a big one: %+v", res[0])
+	}
+	if !JuliaReplace() {
+		t.Error("a Reset that reloaded the image owes no replacement (ResetInfo.Reloaded)")
+	}
+
+	// a Reset that fails: the kernel is closed under it
+	kernMu.Lock()
+	replace = false
+	kernMu.Unlock()
+	BreakJulia()
+	before := *n
+	if res := Run("```julia\n3 + 3\n```\n"); res[0].Error != "" || res[0].Display[0]["text/plain"] != "6" || *n != before+1 || !JuliaReplace() {
+		t.Errorf("a failed Reset: %d loads (was %d), owed %v, %+v", *n, before, JuliaReplace(), res[0])
+	}
+
+	// ... and the kernel cannot be booted again
+	BreakJulia()
+	loader = func() (*interp.Kernel, error) { return nil, errors.New("no memory") }
+	if res := Run("```julia\n4 + 4\n```\n"); !strings.Contains(res[0].Error, "the Julia kernel could not start: no memory") {
+		t.Errorf("a Reset that fails and a boot that fails: %+v", res[0])
 	}
 }

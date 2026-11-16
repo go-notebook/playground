@@ -9,8 +9,8 @@ import "time"
 // decodes them (interp.LoadOptions.Digest). They are go-notebook's jcells.Version
 // and jcells.Digest, which a test holds equal (julia_test.go).
 const (
-	JuliaImageVersion = "v0.18.0"
-	JuliaImageDigest  = "b2f03e85c0beece0dee586849f581b5ced5a01008265f9c60ac323f229b7d523"
+	JuliaImageVersion = "v0.19.0"
+	JuliaImageDigest  = "9cb9e14fa9cf0f6f471df4bbb5270aba5d560609f2a9fe00c3a005af407b0b6f"
 	// JuliaImageSize is the image's size in bytes: what the page expects to
 	// decompress, so that a truncated or inflated download is refused before
 	// the digest is computed.

@@ -883,15 +883,12 @@ async function juliaChecks(name) {
     if (cells.some((c) => c.lang === 'go' && c.out === '20') === false) fail('Julia: the Go cell beside the Julia cells does not run: ' + JSON.stringify(cells));
     const failedStyle = await page.$$eval('#notebook .output.error', (es) => es.map((e) => e.textContent));
     if (failedStyle.length) fail('Julia example: cells failed: ' + failedStyle.join('; '));
-    // (the page replaces the Julia worker after each run: the badge says it is
-    // loading until the new one is ready, then says Julia alone)
+    // (the worker is not replaced after a run: each run resets the kernel, so the
+    // badge says Julia alone, at once)
     const badgeNow = () => page.$eval('#notebook .cell[data-lang="julia"] .cell-head .lang-badge', (b) => b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent);
     const restarting = await badgeNow();
-    if (restarting !== 'Julia' && restarting !== 'Julia · loading the Julia runtime…') fail('the badge of a Julia cell once Julia runs: ' + JSON.stringify(restarting));
-    await page.waitForFunction(() => {
-      const b = document.querySelector('#notebook .cell[data-lang="julia"] .cell-head .lang-badge');
-      return b && b.querySelector('select').selectedOptions[0].text + b.querySelector('.lang-status').textContent === 'Julia';
-    }, null, { timeout: 120000 }).catch(() => fail('the badge of a Julia cell never says Julia once the new worker is ready'));
+    if (restarting !== 'Julia') fail('the badge of a Julia cell once Julia runs: ' + JSON.stringify(restarting));
+    if ((await page.evaluate(() => window.playgroundRecycles || 0)) !== 0) fail('Julia: the first run replaced the worker');
 
     // What was downloaded, against what the note says: the third core and the
     // image, as GitHub Pages serves them (gzip of the core, the image as
@@ -934,10 +931,9 @@ async function juliaChecks(name) {
     cells = await codeState(page);
     if (cells.length !== 2 || cells[1].lang !== 'julia' || cells[1].out !== '42') fail('a Julia cell typed in the editor: ' + JSON.stringify(cells));
 
-    // 1c. Julia twice in a row: each run is a new kernel in a new wasm instance
-    // (go-embedded-julia cannot boot a second kernel in a process that has run
-    // Julia), so a struct a notebook defines is defined again without error, the
-    // first run's variables are gone, and neither run is lost.
+    // 1c. Julia twice in a row: each run starts with Kernel.Reset, so a struct a
+    // notebook defines is defined again without error, the first run's variables
+    // are gone, and neither run is lost. (More below: 1f.)
     const twice = '```julia\nstruct P\n    x::Int\nend\nP(21).x * 2\n```\n';
     for (const n of [1, 2, 3]) {
       await openFile(page, `twice${n}.md`, twice);
@@ -950,12 +946,12 @@ async function juliaChecks(name) {
     cells = await codeState(page);
     if (!/UndefVarError/.test(cells[0].out)) fail('a variable of an earlier Julia run is still there: ' + JSON.stringify(cells));
 
-    // 1d. A replacement owed while a call is in flight. The worker that has run
-    // Julia is replaced (it must not boot a second kernel), but not while an edit
-    // is pending: it is made when the worker goes idle, or before the next run,
-    // whichever comes first. A burst of calls is kept in flight while the run ends
-    // (the worker's reply to them comes after its "recycle" message), and runs
-    // follow at once: every one must work, and the replacement must have happened.
+    // 1d. Runs with calls in flight. A burst of calls is kept in flight while the
+    // run ends and runs follow at once: every one must work, and none replaces the
+    // worker (a Reset keeps the instance). Then a kernel that is broken under the
+    // worker, so that its next Reset fails: that run works (a kernel is booted
+    // anew), and the replacement it owes is made, once, made when idle or forced
+    // by the next run, whichever comes first.
     const replaced = () => page.evaluate(() => window.playgroundRecycles || 0);
     const rec0 = await replaced();
     const w1 = await page.evaluate(() => window.playgroundWorkers);
@@ -971,15 +967,22 @@ async function juliaChecks(name) {
       cells = await codeState(page);
       if (cells.length !== 1 || cells[0].out !== '7') fail(`Julia run ${n} with calls in flight: ` + JSON.stringify(cells));
     }
-    // Each of the three runs executed Julia in a worker of its own, so each is
-    // followed by exactly one replacement (made when idle, or forced by the next run).
-    await page.waitForFunction((n) => (window.playgroundRecycles || 0) >= n, rec0 + 3, { timeout: 90000 }).catch(() => fail('the Julia worker was not replaced after each of three runs with calls in flight'));
-    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
-
-    // 1e. A Go-only run after a Julia run does not reboot Julia: no replacement, no
-    // new fetch, and as fast as a Go run is (the worker, replaced after the Julia
-    // run, holds a kernel nobody used).
+    await new Promise((r) => setTimeout(r, 1500));
+    if ((await replaced()) !== rec0) fail(`Julia: ${(await replaced()) - rec0} worker replacements over three normal runs, none expected`);
+    // A Reset that fails: the next run still works, and owes exactly one replacement.
+    await page.evaluate(() => window.playgroundCall('break', {}));
+    await openFile(page, 'broken.md', '```julia\nstruct Q\n    x::Int\nend\nQ(8).x\n```\n');
+    await page.waitForSelector(DONE, { timeout: 180000 });
+    cells = await codeState(page);
+    if (cells.length !== 1 || cells[0].out !== '8') fail('Julia run after a kernel broke under the worker: ' + JSON.stringify(cells));
+    await page.waitForFunction((n) => (window.playgroundRecycles || 0) >= n, rec0 + 1, { timeout: 120000 }).catch(() => fail('the Julia worker was not replaced after a Reset that failed'));
     await page.evaluate(() => window.playgroundMemory()); // answers when the new worker is ready
+    if ((await replaced()) !== rec0 + 1) fail(`a failed Reset owes one replacement, ${(await replaced()) - rec0} were made`);
+    if ((await page.evaluate(() => window.playgroundWorkers)) !== w1) fail('a Julia worker replacement was counted as a crash or a restart');
+    console.log('Julia: a Reset that failed gave a correct run and exactly one worker replacement');
+
+    // 1e. A Go-only run after a Julia run does not touch the kernel: no replacement,
+    // no new fetch, and as fast as a Go run is.
     const r1 = await replaced();
     const j1 = juliaRequests.length;
     const tg = Date.now();
@@ -995,6 +998,43 @@ async function juliaChecks(name) {
     await page.waitForSelector(DONE, { timeout: 120000 });
     cells = await codeState(page);
     if (cells[0].out !== '2') fail('a Julia run after the Go-only run: ' + JSON.stringify(cells));
+
+    // 1f. Thirty runs in one worker: each takes milliseconds after the first (a
+    // Reset, not a boot), the wasm memory stays flat, no worker is replaced, and
+    // the state really is back each time: a global gone, a const and a struct
+    // defined again, and the first draw of rand() the same after a seeded run.
+    const rec1 = await replaced();
+    const runJulia = async (name, src) => {
+      const t = Date.now();
+      await openFile(page, name, '```julia\n' + src + '\n```\n');
+      await page.waitForSelector(DONE, { timeout: 180000 });
+      return { ms: Date.now() - t, cells: await codeState(page) };
+    };
+    const first = (await runJulia('draw1.md', 'rand()')).cells[0].out;
+    const seeded = (await runJulia('draw2.md', 'using Random\nRandom.seed!(7)\nrand()')).cells[0].out;
+    const again = (await runJulia('draw3.md', 'rand()')).cells[0].out;
+    if (!/^0\.\d+/.test(first) || seeded === first || again !== first) fail(`Julia RNG: first draw ${first}, seeded run ${seeded}, first draw of the next run ${again}`);
+    await runJulia('state1.md', 'g1 = 5\nconst K = 1\nstruct S\n    x::Int\nend\nnothing');
+    const gone = (await runJulia('state2.md', 'g1')).cells[0].out;
+    if (!/UndefVarError/.test(gone)) fail('Julia: a global of the run before is still there: ' + gone);
+    const redefined = (await runJulia('state3.md', 'const K = 2\nstruct S\n    y::Int\nend\n(K, fieldnames(S))')).cells[0].out;
+    if (redefined !== '(2, (:y,))') fail('Julia: a const and a struct are not defined again: ' + redefined);
+    const memSeries = [];
+    const msSeries = [];
+    for (let n = 1; n <= 30; n++) {
+      const r = await runJulia(`thirty${n}.md`, 'struct P\n    x::Int\nend\nP(21).x * 2');
+      if (r.cells.length !== 1 || r.cells[0].out !== '42') fail(`Julia run ${n} of 30: ` + JSON.stringify(r.cells));
+      msSeries.push(r.ms);
+      memSeries.push(Math.round((await page.evaluate(() => window.playgroundMemory())).wasm / 1048576));
+    }
+    console.log(`Julia 30 runs in one worker: ms ${msSeries.join(' ')}; wasm MiB ${memSeries.join(' ')}; worker replacements ${(await replaced()) - rec1}`);
+    if ((await replaced()) !== rec1) fail(`Julia: ${(await replaced()) - rec1} worker replacements over 30 normal runs`);
+    // (Not flat to the MiB: the Go heap of the instance grows about 2.5 MiB a run
+    // until the collector's pace catches up, and Go-only runs do the same, 1.5 MiB;
+    // measured, it stops at about 810 MiB. A boot would be 250 MiB a run: 30 runs
+    // of a kernel boot would be 7.5 GiB. The bound is 4 MiB a run.)
+    if (Math.max(...memSeries) - memSeries[0] > 120) fail(`Julia: the wasm memory grows over 30 runs: ${memSeries.join(' ')}`);
+    if (Math.max(...msSeries) > 3000) fail(`Julia: a run after the first took ${Math.max(...msSeries)} ms, a Reset takes milliseconds: ${msSeries.join(' ')}`);
 
     // 2. The cells of one run, each on the same worker.
     const run = async (src, extra = '') => {
@@ -1074,13 +1114,13 @@ async function juliaChecks(name) {
       const after = await run('1 + 2');
       if (after[0].out !== '3') fail(`after Julia recursion ${what}, the next run: ` + JSON.stringify(after));
     }
-    // Every boot of a kernel keeps about a GiB of the instance's memory until the
-    // instance ends, so the page replaces the worker before the 4 GiB run out
-    // (about the seventh run did, before): the many runs above survived by it.
+    // Every boot of a kernel keeps memory in the instance until it ends (about
+    // 250 MiB), and a Reset keeps none: over the more than fifty runs above the
+    // only replacement is the one the broken kernel (1d) owed.
     const recycles = await page.evaluate(() => window.playgroundRecycles || 0);
     const finalMem = await page.evaluate(() => window.playgroundMemory());
     console.log(`Julia: ${recycles} planned worker replacements over the runs above; linear memory now ${(finalMem.wasm / 1048576).toFixed(0)} MiB; browser processes ${chromiumRssMB().toFixed(0)} MB resident, peak ${peak.toFixed(0)} MB (${before.toFixed(0)} MB before Julia)`);
-    if (!recycles) fail('Julia: no worker replacement over more than twenty runs: the memory would have run out');
+    if (recycles !== 1) fail(`Julia: ${recycles} worker replacements over more than fifty runs, one expected (the broken kernel's)`);
   } finally {
     clearInterval(sampler);
     await page.close();
