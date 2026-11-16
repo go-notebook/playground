@@ -68,6 +68,10 @@ var (
 	// load the image again (ResetInfo.Reloaded: about 250 MiB are kept) or failed
 	// and the kernel was booted anew.
 	replace bool
+	// lastReset is what the last successful Reset said: the writes it undid and,
+	// since go-embedded-julia v0.20.0, the tasks and timers of the earlier run
+	// that it stopped (the tests read it).
+	lastReset interp.ResetInfo
 	// loader makes a kernel; a seam for the tests that cannot reach the image.
 	loader = loadKernel
 )
@@ -108,8 +112,11 @@ func takeKernel() (*interp.Kernel, error) {
 				return nil, lerr
 			}
 			kern, replace = k, true
-		} else if info.Reloaded {
-			replace = true
+		} else {
+			lastReset = info
+			if info.Reloaded {
+				replace = true
+			}
 		}
 	}
 	dirty = false

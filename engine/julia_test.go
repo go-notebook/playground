@@ -471,26 +471,57 @@ func TestJuliaResetReloadsOrFails(t *testing.T) {
 	}
 }
 
-// EXPECTED TO FAIL (XFAIL), pending go-embedded-julia: Kernel.Reset neither ends
-// nor waits for the tasks and timers a cell started (kernelreset.go, "what it does
-// not undo"). Run 1 starts a task that sleeps 0.5 s and yields once, so the task
-// is parked on its timer; run 2 sleeps 1 s. Measured on v0.19.0: the task of run 1
-// wakes in run 2, which fails ("not ported yet: ccall(:jl_get_backtrace)") instead
-// of printing "done" (a task that never ran, because run 1 did not yield, is
-// dropped by the Reset and does no harm; "ghost" itself has not been seen). Before
-// the Reset the worker was replaced after each run and the task died with it.
-//
-// The test passes while run 2 is polluted (an error, or "ghost" in its output),
-// and FAILS when it is clean: upstream fixed it (Reset ends tasks and timers), so
-// assert here that run 2 is exactly "done" and drop the expectation.
+// A task or a timer an earlier run started does not reach the next one
+// (go-embedded-julia v0.20.0: Reset stops them before the rollback; on v0.19.0 a
+// task parked on its timer woke in run 2, which failed with "not ported yet:
+// ccall(:jl_get_backtrace)" or "val already in a list", and left the kernel
+// broken). Run 1 starts a task that sleeps 0.5 s and yields once, so it is parked
+// on its timer, and a periodic Timer; run 2 sleeps 1 s and must print exactly
+// "done", with no "ghost" and no "tick"; runs 3 and 4 work. The Reset that began
+// run 2 says what it stopped: a task and a timer at least.
 func TestJuliaTaskOfAnEarlierRunDoesNotReachTheNext(t *testing.T) {
 	noKernel(t)
-	if res := Run("```julia\n@async (sleep(0.5); println(\"ghost\"))\nsleep(0.01)\nnothing\n```\n"); res[0].Error != "" {
-		t.Fatal(res[0].Error)
+	out := func(src string) (string, string) {
+		res := Run("```julia\n" + src + "\n```\n")
+		text := res[0].Output
+		if len(res[0].Display) > 0 {
+			text += res[0].Display[0]["text/plain"]
+		}
+		return text, res[0].Error
 	}
-	res := Run("```julia\nsleep(1)\nprintln(\"done\")\n```\n")
-	if res[0].Error == "" && !strings.Contains(res[0].Output, "ghost") && res[0].Output == "done\n" {
-		t.Fatal("XFAIL no longer fails: run 2 is clean, the task of run 1 did not reach it; Reset ends tasks now: assert run 2 is exactly \"done\" and remove this expectation")
+	if _, e := out("@async (sleep(0.5); println(\"ghost\"))\nsleep(0.01)\nnothing"); e != "" {
+		t.Fatal(e)
 	}
-	t.Logf("XFAIL, as expected: run 2 is polluted by the task of run 1: output %q, error %q", res[0].Output, res[0].Error)
+	if got, e := out("sleep(1)\nprintln(\"done\")"); e != "" || got != "done\n" {
+		t.Errorf("run 2: output %q, error %q; want exactly \"done\"", got, e)
+	}
+	if lastReset.Tasks < 1 {
+		t.Errorf("the Reset that began run 2 stopped %d tasks, want at least 1: %+v", lastReset.Tasks, lastReset)
+	}
+	for i, want := range []string{"2", "4"} {
+		if got, e := out(fmt.Sprintf("%d + %d", i+1, i+1)); e != "" || got != want {
+			t.Errorf("run %d: %q, error %q; want %q", i+3, got, e, want)
+		}
+	}
+}
+
+// A periodic Timer a run started does not fire in the next run.
+func TestJuliaTimerOfAnEarlierRunDoesNotFireInTheNext(t *testing.T) {
+	noKernel(t)
+	out := func(src string) (string, string) {
+		res := Run("```julia\n" + src + "\n```\n")
+		return res[0].Output, res[0].Error
+	}
+	if _, e := out("t = Timer(0.2; interval=0.2) do _\n    println(\"tick\")\nend\nsleep(0.01)\nnothing"); e != "" {
+		t.Fatal(e)
+	}
+	if got, e := out("sleep(1)\nprintln(\"done\")"); e != "" || got != "done\n" {
+		t.Errorf("run 2: output %q, error %q; want exactly \"done\", no tick", got, e)
+	}
+	if lastReset.Timers < 1 {
+		t.Errorf("the Reset that began run 2 closed %d timers, want at least 1: %+v", lastReset.Timers, lastReset)
+	}
+	if got, e := out("println(\"after\")"); e != "" || got != "after\n" {
+		t.Errorf("run 3: %q, error %q", got, e)
+	}
 }
