@@ -112,7 +112,7 @@ A notebook may have ` ```ruby ` cells too, as in [go-notebook](https://github.co
 
 ### Versions of the languages in the page
 
-go-notebook v0.20.0 (this page), with go-embedded-r v0.17.1 for R, go-embedded-julia v0.18.0 for Julia (it runs in the page, in a third core), and go-embedded-fortran v0.17.0 for Fortran.
+go-notebook v0.21.0 (this page), with go-embedded-r v0.17.1 for R, go-embedded-julia v0.18.0 for Julia (it runs in the page, in a third core), and go-embedded-fortran v0.17.0 for Fortran.
 
 ### Julia cells: run in the page, in a third core
 
