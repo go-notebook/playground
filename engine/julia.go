@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/go-embedded-julia/julia/interp"
 )
@@ -54,57 +53,94 @@ func loadKernel() (*interp.Kernel, error) {
 // pinned is JuliaImageDigest as the kernel takes it (a test holds that it parses).
 var pinned, _ = interp.ParseDigest(JuliaImageDigest)
 
-// warm is a kernel made ahead of the run that will use it: the page boots it
-// before it says the Julia core is ready (loading takes seconds, the first cell
-// milliseconds), and again after each run, which closes its own.
+// The process has one kernel, booted ahead of the first run (the page boots it
+// before it says the Julia core is ready: loading takes seconds, a cell
+// milliseconds) and kept: each Julia run starts with Kernel.Reset (go-embedded-julia
+// v0.19.0), which puts it back as it was booted, in milliseconds and without
+// the memory a second boot keeps in the instance (about 250 MiB each, and the
+// twelfth boot ran out of the 4 GiB).
 var (
-	warmMu sync.Mutex
-	warm   *interp.Kernel
+	kernMu sync.Mutex
+	kern   *interp.Kernel
+	// dirty: a cell has run in kern since it was booted or last reset.
+	dirty bool
+	// replace: the worker owes the page a replacement, because a Reset had to
+	// load the image again (ResetInfo.Reloaded: about 250 MiB are kept) or failed
+	// and the kernel was booted anew.
+	replace bool
+	// lastReset is what the last successful Reset said: the writes it undid and,
+	// since go-embedded-julia v0.20.0, the tasks and timers of the earlier run
+	// that it stopped (the tests read it).
+	lastReset interp.ResetInfo
 	// loader makes a kernel; a seam for the tests that cannot reach the image.
 	loader = loadKernel
 )
 
-// WarmJulia boots a kernel for the next run, if none is waiting.
+// WarmJulia boots the kernel, if there is none.
 func WarmJulia() error {
-	warmMu.Lock()
-	defer warmMu.Unlock()
-	if warm != nil {
+	kernMu.Lock()
+	defer kernMu.Unlock()
+	if kern != nil {
 		return nil
 	}
 	k, err := loader()
 	if err != nil {
 		return err
 	}
-	warm = k
+	kern = k
 	return nil
 }
 
-// takeKernel is the waiting kernel, or a new one.
+// takeKernel is the kernel for a run: the one booted, reset if a cell has run in
+// it, or a new one when there is none or its Reset failed.
 func takeKernel() (*interp.Kernel, error) {
-	warmMu.Lock()
-	k := warm
-	warm = nil
-	warmMu.Unlock()
-	if k != nil {
-		return k, nil
+	kernMu.Lock()
+	defer kernMu.Unlock()
+	if kern == nil {
+		k, err := loader()
+		if err != nil {
+			return nil, err
+		}
+		kern = k
+	} else if dirty {
+		info, err := kern.Reset()
+		if err != nil {
+			// The replacement is owed from here on, whether or not the boot
+			// below succeeds: the next run boots through kern == nil.
+			kern.Close()
+			kern, replace = nil, true
+			k, lerr := loader()
+			if lerr != nil {
+				return nil, lerr
+			}
+			kern = k
+		} else {
+			lastReset = info
+			if info.Reloaded {
+				replace = true
+			}
+		}
 	}
-	return loader()
+	dirty = false
+	return kern, nil
 }
 
-// used is set once a Julia cell has run in this process: it can boot no other
-// kernel for free: each boot keeps memory in the instance (about 250 MiB, and
-// the twelfth boot ran out of the 4 GiB), so the page replaces the worker.
-var used atomic.Bool
+// JuliaReplace reports whether the page should replace this worker: a Reset
+// reloaded the image or failed, and the instance holds the memory of a boot more.
+func JuliaReplace() bool {
+	kernMu.Lock()
+	defer kernMu.Unlock()
+	return replace
+}
 
-// JuliaUsed reports whether a Julia cell has run in this process.
-func JuliaUsed() bool { return used.Load() }
-
-// closeJulia ends the session's kernel: each run is a session of its own, with
-// a Main of its own (a struct redefined by a second run would be an error in
-// the first one's).
+// closeJulia ends the run's use of the kernel, which stays for the next run,
+// whose Reset gives it a Main of its own (a struct redefined by a second run
+// is not an error in it).
 func (s *session) closeJulia() {
 	if s.j != nil {
-		s.j.k.Close()
+		kernMu.Lock()
+		dirty = true
+		kernMu.Unlock()
 		s.j = nil
 	}
 }
@@ -122,7 +158,6 @@ func (s *session) jCell(src string) (output string, shown []map[string]string, e
 			return "", nil, "the Julia kernel could not start: " + err.Error()
 		}
 		s.j = &jSide{k: k}
-		used.Store(true)
 	}
 	res := s.j.k.EvalWith(context.Background(), src, juliaOptions())
 	output = res.Stdout + res.Stderr

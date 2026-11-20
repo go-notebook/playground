@@ -26,8 +26,8 @@ func (s *session) jCell(string) (string, []map[string]string, string) {
 // closeJulia has nothing to close.
 func (s *session) closeJulia() {}
 
-// JuliaUsed is false here: no Julia cell runs.
-func JuliaUsed() bool { return false }
+// JuliaReplace is false here: no Julia cell runs.
+func JuliaReplace() bool { return false }
 
 // WarmJulia is an error here: there is no Julia runtime to prepare.
 func WarmJulia() error { return errNoJulia }

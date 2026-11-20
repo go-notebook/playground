@@ -75,14 +75,15 @@
   // juliaLoading is the note on a Julia cell while its core loads.
   let juliaLoading = null;
   // recycling marks the next worker start as a planned replacement; recycleWanted
-  // says the Julia worker has run Julia and owes one (see 'recycle' below).
+  // says the Julia worker owes one: a Reset reloaded the image or failed (see
+  // 'recycle' below); a normal run resets the kernel and replaces nothing.
   let recycling = false;
   let recycleWanted = false;
   function maybeRecycle(force) {
     if (!recycleWanted || engine !== 'julia' || (!force && (pending.size > 0 || running))) return;
     recycleWanted = false;
     recycling = true;
-    setStatus('Restarting Julia for a fresh kernel (about 10 s)…');
+    setStatus('Restarting Julia to free memory (about 10 s)…');
     restart('julia');
   }
   let queue = [];
