@@ -105,13 +105,15 @@ func takeKernel() (*interp.Kernel, error) {
 	} else if dirty {
 		info, err := kern.Reset()
 		if err != nil {
+			// The replacement is owed from here on, whether or not the boot
+			// below succeeds: the next run boots through kern == nil.
 			kern.Close()
-			kern = nil
+			kern, replace = nil, true
 			k, lerr := loader()
 			if lerr != nil {
 				return nil, lerr
 			}
-			kern, replace = k, true
+			kern = k
 		} else {
 			lastReset = info
 			if info.Reloaded {

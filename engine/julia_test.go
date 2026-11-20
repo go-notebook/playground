@@ -349,7 +349,7 @@ func forgetKernel(t *testing.T) {
 		if kern != nil {
 			kern.Close()
 		}
-		kern, dirty, replace = nil, false, false
+		kern, dirty, replace, lastReset = nil, false, false, interp.ResetInfo{}
 	}
 	reset()
 	t.Cleanup(reset)
@@ -464,10 +464,20 @@ func TestJuliaResetReloadsOrFails(t *testing.T) {
 	}
 
 	// ... and the kernel cannot be booted again
+	kernMu.Lock()
+	replace = false
+	kernMu.Unlock()
 	BreakJulia()
+	working := loader
 	loader = func() (*interp.Kernel, error) { return nil, errors.New("no memory") }
 	if res := Run("```julia\n4 + 4\n```\n"); !strings.Contains(res[0].Error, "the Julia kernel could not start: no memory") {
 		t.Errorf("a Reset that fails and a boot that fails: %+v", res[0])
+	}
+	// The next run boots through kern == nil; the replacement is still owed,
+	// because the instance holds the memory of the failed kernel's boot.
+	loader = working
+	if res := Run("```julia\n5 + 5\n```\n"); res[0].Error != "" || res[0].Display[0]["text/plain"] != "10" || !JuliaReplace() {
+		t.Errorf("the boot after a failed Reset and a failed boot: owed %v, %+v", JuliaReplace(), res[0])
 	}
 }
 
