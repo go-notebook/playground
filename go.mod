@@ -103,7 +103,7 @@ require (
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-c/c v0.2.1 // indirect
-	github.com/go-embedded-fortran/fortran v0.30.0 // indirect
+	github.com/go-embedded-fortran/fortran v0.31.0 // indirect
 	github.com/go-embedded-r/r v0.17.1 // indirect
 	github.com/go-embedded-r/tre v0.1.3 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
