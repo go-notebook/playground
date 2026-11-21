@@ -3,17 +3,17 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-embedded-julia/julia v0.20.0
+	github.com/go-embedded-julia/julia v0.22.0
 	github.com/go-fleettools/landingkit v0.18.0
-	github.com/go-ndarray/ndarray v0.40.3
-	github.com/go-notebook/notebook v0.21.2
+	github.com/go-ndarray/ndarray v0.44.0
+	github.com/go-notebook/notebook v0.22.0
 	github.com/go-numerics/integrate v0.2.0
-	github.com/go-numerics/optimize v0.3.1
-	github.com/go-numerics/special v0.2.0
+	github.com/go-numerics/optimize v0.6.0
+	github.com/go-numerics/special v0.5.3
 	github.com/go-opentype/fonts v0.14.0
 	github.com/go-plot/plot v0.1.1
 	github.com/go-scikit/ruby v0.2.1
-	github.com/go-statistics/stats v0.1.0
+	github.com/go-statistics/stats v0.1.1
 	github.com/go-widgets/painter v0.17.0
 	github.com/go-widgets/textinput v0.1.1
 	github.com/go-widgets/toolkit v0.375.0
@@ -21,7 +21,7 @@ require (
 	github.com/go-widgets/webcanvas v0.14.3
 	github.com/go-widgets/window v0.93.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/traefik/yaegi v0.16.1
 )
 
@@ -91,7 +91,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a // indirect
 	github.com/go-bignum/bigfloat v0.2.0 // indirect
-	github.com/go-blas/blas v0.1.0 // indirect
+	github.com/go-blas/blas v0.3.0 // indirect
 	github.com/go-commonmark/commonmark v0.1.0 // indirect
 	github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 // indirect
 	github.com/go-composites/bag v0.0.0-20261017234052-8c0542744097 // indirect
@@ -104,12 +104,12 @@ require (
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-c/c v0.2.1 // indirect
 	github.com/go-embedded-fortran/fortran v0.31.0 // indirect
-	github.com/go-embedded-r/r v0.17.1 // indirect
+	github.com/go-embedded-r/r v0.22.0 // indirect
 	github.com/go-embedded-r/tre v0.1.3 // indirect
 	github.com/go-embedded-ruby/ruby v0.8.5 // indirect
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
-	github.com/go-fft/fft v0.28.11 // indirect
+	github.com/go-fft/fft v0.29.0 // indirect
 	github.com/go-gfx/gfx v0.41.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
@@ -246,7 +246,7 @@ require (
 	github.com/go-ruby-pagy/pagy v0.0.0-20261025191701-053fcd4aa5cc // indirect
 	github.com/go-ruby-paper-trail/paper-trail v0.0.0-20261025191706-ca25fcaea25a // indirect
 	github.com/go-ruby-parquet/parquet v0.0.0-20261025191711-6e7a95f7a303 // indirect
-	github.com/go-ruby-parser/parser v0.13.1 // indirect
+	github.com/go-ruby-parser/parser v0.14.0 // indirect
 	github.com/go-ruby-pathname/pathname v0.0.0-20261025180827-dbeb0072806a // indirect
 	github.com/go-ruby-pg/pg v0.0.0-20261025191721-f5e310f52c5f // indirect
 	github.com/go-ruby-prawn/prawn v0.0.0-20261028113423-d440480b5471 // indirect
@@ -317,9 +317,10 @@ require (
 	github.com/go-simd/adler32 v0.1.0 // indirect
 	github.com/go-simd/base64 v0.1.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
-	github.com/go-simd/floats v0.17.0 // indirect
+	github.com/go-simd/floats v0.23.0 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
+	github.com/go-sparse/sparse v0.3.0 // indirect
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
 	github.com/go-typeset/bidi v0.3.1 // indirect
@@ -416,8 +417,8 @@ require (
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260817212433-ac3dfec99bb1 // indirect
