@@ -4,17 +4,17 @@ import "time"
 
 // The Base image the Julia core boots from: the release of go-embedded-julia
 // that ships it, and the SHA-256 of its julia-image-<Version>.bin asset
-// (25,661,677 bytes; about 7.8 MB gzipped). The digest is pinned here as
+// (25,695,765 bytes; about 7.8 MB gzipped). The digest is pinned here as
 // go.sum pins a module, and the kernel checks it over the bytes before it
 // decodes them (interp.LoadOptions.Digest). They are go-notebook's jcells.Version
 // and jcells.Digest, which a test holds equal (julia_test.go).
 const (
-	JuliaImageVersion = "v0.22.0"
-	JuliaImageDigest  = "dcec3dc808df198aab30aac68a28420d48e167e3c8510d0f8d75d8fad567b364"
+	JuliaImageVersion = "v0.24.0"
+	JuliaImageDigest  = "cd5ddf2107c2a553247b87c59b04f803b7104d020a5ce5bbb2c044b82ff4cb35"
 	// JuliaImageSize is the image's size in bytes: what the page expects to
 	// decompress, so that a truncated or inflated download is refused before
 	// the digest is computed.
-	JuliaImageSize = 25_661_677
+	JuliaImageSize = 25_695_765
 )
 
 // JuliaLimits bound what one Julia cell may use in the page, as RLimits bound R's:

@@ -388,6 +388,23 @@ func TestJuliaWarmKernel(t *testing.T) {
 	}
 }
 
+// The first Float64 matrix product of a fresh kernel runs within the page's
+// limits (JuliaLimits: 20 million statements, 20 s). With the v0.22.0 image its
+// first display cost about 70 million statements of type inference
+// (go-embedded-julia/julia#119) and the cell was stopped; the v0.24.0 image
+// carries that inference.
+func TestJuliaMatrixProductRunsInTheLimits(t *testing.T) {
+	noKernel(t)
+	res := Run("```julia\nA = [1.0 2.0; 3.0 4.0]; B = A * A\nB\n```\n")
+	if res[0].Error != "" {
+		t.Fatalf("the cell failed: %s", res[0].Error)
+	}
+	want := "2×2 Matrix{Float64}:\n  7.0  10.0\n 15.0  22.0"
+	if len(res[0].Display) == 0 || res[0].Display[0]["text/plain"] != want {
+		t.Errorf("shown %+v (output %q), want %q", res[0].Display, res[0].Output, want)
+	}
+}
+
 // Each run starts as the first of a kernel just booted: a global of the run
 // before is gone, a struct and a constant are defined again, a seeded run does
 // not change the first draw of the next, and no worker replacement is owed.

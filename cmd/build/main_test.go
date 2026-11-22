@@ -121,7 +121,7 @@ func TestBuild(t *testing.T) {
 		// the release and the start of the pinned digest
 		`"julia":"playground-julia.wasm?v=`,
 		`<script id="julia-data" type="application/json">{"url":"julia-image-` + engine.JuliaImageVersion + `-` + engine.JuliaImageDigest[:8] + `.bin.gz",`,
-		`"rawSize":25661677,"digest":"` + engine.JuliaImageDigest + `","coreSize":`,
+		`"rawSize":25695765,"digest":"` + engine.JuliaImageDigest + `","coreSize":`,
 		// the loading carousel, before playground.js, which drives it
 		`<div id="loading"><style>`,
 		`aria-roledescription="carousel" aria-label="What go-notebook does"`,
