@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -402,6 +404,40 @@ func TestJuliaMatrixProductRunsInTheLimits(t *testing.T) {
 	want := "2×2 Matrix{Float64}:\n  7.0  10.0\n 15.0  22.0"
 	if len(res[0].Display) == 0 || res[0].Display[0]["text/plain"] != want {
 		t.Errorf("shown %+v (output %q), want %q", res[0].Display, res[0].Output, want)
+	}
+}
+
+// A \ b runs in the page's limits (JuliaLimits: 20 million statements) since
+// go-embedded-julia v0.25.0 (LAPACK getrf/getrs). The solution is judged by
+// its residual, computed here, not by printed text; a singular matrix is a
+// SingularException.
+func TestJuliaLinearSolveRunsInTheLimits(t *testing.T) {
+	noKernel(t)
+	res := Run("```julia\nA = [4.0 3.0; 6.0 3.0]; b = [10.0, 12.0]; x = A \\ b\nprintln(x[1]); println(x[2])\n```\n")
+	if res[0].Error != "" {
+		t.Fatalf("the cell failed: %s", res[0].Error)
+	}
+	f := strings.Fields(res[0].Output)
+	if len(f) != 2 {
+		t.Fatalf("output %q, want two numbers", res[0].Output)
+	}
+	var x [2]float64
+	for i := range x {
+		v, err := strconv.ParseFloat(f[i], 64)
+		if err != nil {
+			t.Fatalf("output %q: %v", res[0].Output, err)
+		}
+		x[i] = v
+	}
+	A, b := [2][2]float64{{4, 3}, {6, 3}}, [2]float64{10, 12}
+	for i := range A {
+		if r := math.Abs(A[i][0]*x[0] + A[i][1]*x[1] - b[i]); r > 1e-12 {
+			t.Errorf("x = %v: residual %g in row %d exceeds 1e-12", x, r, i)
+		}
+	}
+	res = Run("```julia\n[1.0 2.0; 2.0 4.0] \\ [1.0, 2.0]\n```\n")
+	if !strings.Contains(res[0].Error, "SingularException") {
+		t.Errorf("singular solve: error %q, output %q", res[0].Error, res[0].Output)
 	}
 }
 

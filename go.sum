@@ -184,8 +184,8 @@ github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a h1:WnRzPthHV1yr9s
 github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a/go.mod h1:syDsgdbvlbD/zjgs6nJktc2araTaN5DEL3a/OvPCrkM=
 github.com/go-bignum/bigfloat v0.2.0 h1:9sDb0Trg9ikAoSvLtjAXBLERNX2wYkbHi/w3FSqj6BQ=
 github.com/go-bignum/bigfloat v0.2.0/go.mod h1:YVHspp0DKscpWZ6NK+rSCXxCfVDldNNoAN2JYQ8FInk=
-github.com/go-blas/blas v0.3.0 h1:oBSIoOCuEp8dzHQaD5fhm3wMLWuYqnQVyXAbCa4LvBY=
-github.com/go-blas/blas v0.3.0/go.mod h1:WjhlqzQ+RA8tS473f18QtcJl5Q0GonPs3RJIxT5G7Bk=
+github.com/go-blas/blas v0.4.0 h1:kYNcuBjYSuwM7fXkWAwyZTaYvrLDFQWmWhKxmGaTf98=
+github.com/go-blas/blas v0.4.0/go.mod h1:WjhlqzQ+RA8tS473f18QtcJl5Q0GonPs3RJIxT5G7Bk=
 github.com/go-commonmark/commonmark v0.1.0 h1:UUjE5rIPuYYxDBi2Nj2/fNoTGDyAirp3p/t8B4TzMjE=
 github.com/go-commonmark/commonmark v0.1.0/go.mod h1:llCsI7zIAI9nbpH+zhewbQfL6WtyYxmkB4HWZ0YseD8=
 github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 h1:WDXYARIlvdq8yAthNq8esKhDlJPBxbAgYs/7psRyI/E=
@@ -210,8 +210,8 @@ github.com/go-embedded-c/c v0.2.1 h1:LCNcLHJ1T3Ry0adJwO+jK9RnoFwrMd6yR/0bb0muHIc
 github.com/go-embedded-c/c v0.2.1/go.mod h1:MhuXRqUtTZTUnm/3fVjho1HiL6QCFylChzOQ+Tu9eiQ=
 github.com/go-embedded-fortran/fortran v0.31.0 h1:NgpTZRvNl66ZhFbFx0Xbwuuz4C5k7+d6p2m2/XN7Dlo=
 github.com/go-embedded-fortran/fortran v0.31.0/go.mod h1:UUtUFdyuO7fWnDoBjbjGZNGXg7bH2fW2DLp1D4QOAkg=
-github.com/go-embedded-julia/julia v0.24.0 h1:VgX4BiYP0pdCAY1qmTqv7LEXPWx7xx1PSasJOERcW2A=
-github.com/go-embedded-julia/julia v0.24.0/go.mod h1:9dWZT6iw1keUx1ZsKZXX3Q/jegjbmoacKI5qj2ogqvA=
+github.com/go-embedded-julia/julia v0.25.0 h1:F/jsSizq2auKsCpZYLSIcIxYjZXbV+7j7wA7bSTAOwc=
+github.com/go-embedded-julia/julia v0.25.0/go.mod h1:hylaxwsK4EPrDCme5FkZpnmsToxnzroHzY6yS0MTP50=
 github.com/go-embedded-r/r v0.22.0 h1:hq6WHM/6mD6EPHS0xQfpxX9cWRF8Z7VIdttrT8wggQo=
 github.com/go-embedded-r/r v0.22.0/go.mod h1:BTArmDboiqM4eMHnw1YSt84+z8wTG7+gVvmE51tarEI=
 github.com/go-embedded-r/tre v0.1.3 h1:MuHk9dLUO51F6kr7j8mnu01bUMVBmOpVlrmO16qObjo=
@@ -269,8 +269,8 @@ github.com/go-ndarray/ndarray v0.44.0 h1:gPlhI/zp+g6pdkVzQTkwGidfljDMAXOwnjuJ/pn
 github.com/go-ndarray/ndarray v0.44.0/go.mod h1:9Xc6/jtUvvtoGKLCQjS5hGvohOW6cb6KWkrlDBBCQCo=
 github.com/go-nokogiri/nokogiri v0.1.0 h1:3Q3BewGHK16Bt34ggJeyf9xeIMJyA3dmfbIxARPgR9U=
 github.com/go-nokogiri/nokogiri v0.1.0/go.mod h1:zjghooYIK8Xfg+fL4/OUhROslx51xGsM3JKtB2TI0tg=
-github.com/go-notebook/notebook v0.23.0 h1:e3U0wQJAPLd0+oL5CCYjX40WlqVXcoIpwKQbNTPvPi4=
-github.com/go-notebook/notebook v0.23.0/go.mod h1:REWPHVUVQswcy6Upvt6HQMVWKY569L+cYQ6rqIGut0c=
+github.com/go-notebook/notebook v0.24.0 h1:0O8le0PC+drAZp5U1NzgjBPvyYWMhAgGDFO6sCFOWO4=
+github.com/go-notebook/notebook v0.24.0/go.mod h1:kBbUIToiwu4/lc/oyzMBdY9lWfru22IQH6Qi0a8OEUM=
 github.com/go-numerics/integrate v0.2.0 h1:IkJhDimTc7nQETCixEvbbHhtOF36GbANBKJI3mJB3Kw=
 github.com/go-numerics/integrate v0.2.0/go.mod h1:ABjpcWy8ZSOg8j6S+7YRsvMJ2LpVkH4E64/CGet2gCw=
 github.com/go-numerics/optimize v0.6.0 h1:7QjTy+M+PclufHFwIo5PrxReU397BvX0ys/ZIJ+kkSo=

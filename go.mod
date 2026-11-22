@@ -3,10 +3,10 @@ module github.com/go-notebook/playground
 go 1.27.3
 
 require (
-	github.com/go-embedded-julia/julia v0.24.0
+	github.com/go-embedded-julia/julia v0.25.0
 	github.com/go-fleettools/landingkit v0.18.0
 	github.com/go-ndarray/ndarray v0.44.0
-	github.com/go-notebook/notebook v0.23.0
+	github.com/go-notebook/notebook v0.24.0
 	github.com/go-numerics/integrate v0.2.0
 	github.com/go-numerics/optimize v0.6.0
 	github.com/go-numerics/special v0.5.3
@@ -91,7 +91,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-augeas/augeas v0.0.0-20260830115849-a0db83a6594a // indirect
 	github.com/go-bignum/bigfloat v0.2.0 // indirect
-	github.com/go-blas/blas v0.3.0 // indirect
+	github.com/go-blas/blas v0.4.0 // indirect
 	github.com/go-commonmark/commonmark v0.1.0 // indirect
 	github.com/go-composites/array v0.0.0-20261015235938-f7161fa2d065 // indirect
 	github.com/go-composites/bag v0.0.0-20261017234052-8c0542744097 // indirect
