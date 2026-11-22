@@ -1,8 +1,8 @@
 == cell 0 (line 8)
 -- output
-x = array([0.99999658, 0.99999299]), 31 iterations, 171 evaluations
+x = array([0.99999551, 0.99999102]), 32 iterations, 117 evaluations
 -- show
-1.446101187309308e-11
+2.015339384496071e-11
 == cell 1 (line 18)
 -- output
 root 2.094551481542327, ∫exp(-x²) = 0.8862269254527579 (√π/2 = 0.8862269254527579)
