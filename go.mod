@@ -1,25 +1,25 @@
 module github.com/go-notebook/playground
 
-go 1.27.3
+go 1.27.4
 
 require (
-	github.com/go-embedded-julia/julia v0.25.0
-	github.com/go-fleettools/landingkit v0.18.0
-	github.com/go-ndarray/ndarray v0.44.0
+	github.com/go-embedded-julia/julia v0.26.0
+	github.com/go-fleettools/landingkit v0.38.0
+	github.com/go-ndarray/ndarray v0.46.0
 	github.com/go-notebook/notebook v0.24.0
-	github.com/go-numerics/integrate v0.2.0
-	github.com/go-numerics/optimize v0.6.0
-	github.com/go-numerics/special v0.5.3
+	github.com/go-numerics/integrate v0.3.0
+	github.com/go-numerics/optimize v0.9.0
+	github.com/go-numerics/special v0.22.1
 	github.com/go-opentype/fonts v0.14.0
-	github.com/go-plot/plot v0.1.1
+	github.com/go-plot/plot v0.3.1
 	github.com/go-scikit/ruby v0.2.1
 	github.com/go-statistics/stats v0.1.1
-	github.com/go-widgets/painter v0.17.0
+	github.com/go-widgets/painter v0.21.0
 	github.com/go-widgets/textinput v0.1.1
-	github.com/go-widgets/toolkit v0.375.0
+	github.com/go-widgets/toolkit v0.407.0
 	github.com/go-widgets/toolkit/rougelex v0.2.0
-	github.com/go-widgets/webcanvas v0.14.3
-	github.com/go-widgets/window v0.93.0
+	github.com/go-widgets/webcanvas v0.17.0
+	github.com/go-widgets/window v0.110.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/traefik/yaegi v0.16.1
@@ -33,7 +33,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.14.5 // indirect
 	github.com/abtreece/confd v0.41.2 // indirect
-	github.com/andybalholm/brotli v1.2.8 // indirect
+	github.com/andybalholm/brotli v1.3.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
@@ -99,7 +99,7 @@ require (
 	github.com/go-composites/null v0.0.0-20261010193318-b5bad10074b1 // indirect
 	github.com/go-composites/result v0.0.0-20261014005241-188da08131d5 // indirect
 	github.com/go-composites/time v0.0.0-20261016000833-3cfecd11ee53 // indirect
-	github.com/go-crdt/crdt v0.57.0 // indirect
+	github.com/go-crdt/crdt v0.59.0 // indirect
 	github.com/go-dataframe/dataframe v0.1.0 // indirect
 	github.com/go-datetime/dates v0.2.0 // indirect
 	github.com/go-embedded-c/c v0.2.1 // indirect
@@ -110,12 +110,11 @@ require (
 	github.com/go-encryptions/unixcrypt v0.1.0 // indirect
 	github.com/go-facter/facter v0.0.0-20260830120958-454b72e642ab // indirect
 	github.com/go-fft/fft v0.29.0 // indirect
-	github.com/go-gfx/gfx v0.41.0 // indirect
+	github.com/go-gfx/gfx v0.42.0 // indirect
 	github.com/go-hiera/hiera v0.0.0-20260830144306-f9304f6bec92 // indirect
 	github.com/go-hocon/hocon v0.0.0-20260831114632-08e716b40e6d // indirect
-	github.com/go-icons/iconoir v0.3.0 // indirect
 	github.com/go-images/gif v0.2.0 // indirect
-	github.com/go-images/images v0.1.1-0.20261026203936-4ac989d310a1 // indirect
+	github.com/go-images/images v0.3.0 // indirect
 	github.com/go-images/jpeg v0.3.0 // indirect
 	github.com/go-images/jpeg2000 v0.14.0 // indirect
 	github.com/go-images/png v0.2.0 // indirect
@@ -127,7 +126,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-mustache/mustache v0.1.0 // indirect
 	github.com/go-nokogiri/nokogiri v0.1.0 // indirect
-	github.com/go-opentype/opentype v0.18.0 // indirect
+	github.com/go-opentype/opentype v0.20.0 // indirect
 	github.com/go-opentype/shape v0.7.0 // indirect
 	github.com/go-pcore/pcore v0.0.0-20260831114716-f9c3e7f59eaa // indirect
 	github.com/go-puppet/puppet v0.0.0-20260918012035-fc6b0424cdbd // indirect
@@ -316,8 +315,9 @@ require (
 	github.com/go-scss/scss v0.0.0-20260905061546-39932e01faa4 // indirect
 	github.com/go-simd/adler32 v0.1.0 // indirect
 	github.com/go-simd/base64 v0.1.0 // indirect
+	github.com/go-simd/boxfilter v0.2.0 // indirect
 	github.com/go-simd/crc32 v0.0.0-20260903220012-5f164e0e0487 // indirect
-	github.com/go-simd/floats v0.23.0 // indirect
+	github.com/go-simd/floats v0.42.0 // indirect
 	github.com/go-simd/hex v0.0.0-20260903220024-a8d22a843218 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/go-sparse/sparse v0.3.0 // indirect
@@ -414,7 +414,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
-	golang.org/x/image v0.47.0 // indirect
+	golang.org/x/image v0.48.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
