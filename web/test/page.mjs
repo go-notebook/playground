@@ -946,6 +946,37 @@ async function juliaChecks(name) {
     cells = await codeState(page);
     if (!/UndefVarError/.test(cells[0].out)) fail('a variable of an earlier Julia run is still there: ' + JSON.stringify(cells));
 
+    // 1c'. Linear algebra within the page's limits (go-embedded-julia v0.25.0,
+    // LAPACK getrf/getrs): A \ b is judged by its numbers, parsed, within 1e-9 of
+    // [1, 2] (the exact solution; the solver is good to about 1e-15, the printing
+    // is shortest-round-trip), the product A * A by its entries ([34 21; 42 27],
+    // worked by hand, within 1e-9), and a singular matrix must end in Julia's own
+    // SingularException, not a wrong answer. One notebook, three cells; then each
+    // cell alone, self-contained, for its time (the page times a run, not a cell).
+    const LA_TOL = 1e-9;
+    const nums = (s, header) => (s.replace(header, '').match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi) || []).map(Number);
+    const solve = 'A = [4.0 3.0; 6.0 3.0]; b = [10.0, 12.0]; x = A \\ b';
+    const prod = 'A * A';
+    const sing = '[1.0 2.0; 2.0 4.0] \\ [1.0, 2.0]';
+    const laMs = await ranMs(page, () => openFile(page, 'linalg.md', `\`\`\`julia\n${solve}\n\`\`\`\n\n\`\`\`julia\n${prod}\n\`\`\`\n\n\`\`\`julia\n${sing}\n\`\`\`\n`));
+    cells = await codeState(page);
+    if (cells.length !== 3) fail('Julia linear algebra: ' + cells.length + ' cells, want 3: ' + JSON.stringify(cells));
+    else {
+      const x = nums(cells[0].out, /^\s*\d+-element Vector\{Float64\}:/);
+      if (x.length !== 2 || Math.abs(x[0] - 1) > LA_TOL || Math.abs(x[1] - 2) > LA_TOL) fail(`Julia A \\ b: x = ${JSON.stringify(cells[0].out)}, want [1, 2] within ${LA_TOL}`);
+      const m = nums(cells[1].out, /^\s*\d+×\d+ Matrix\{Float64\}:/);
+      const want = [34, 21, 42, 27];
+      // (Julia prints a matrix by rows)
+      if (m.length !== 4 || m.some((v, i) => Math.abs(v - want[i]) > LA_TOL)) fail(`Julia A * A: ${JSON.stringify(cells[1].out)}, want [34 21; 42 27] within ${LA_TOL}`);
+      if (!/SingularException/.test(cells[2].out)) fail('Julia singular solve: no SingularException: ' + JSON.stringify(cells[2].out));
+    }
+    const lone = [];
+    for (const [label, src] of [['A \\ b', solve], ['A * A', 'A = [4.0 3.0; 6.0 3.0]; ' + prod], ['singular solve', sing]]) {
+      const ms = await ranMs(page, () => openFile(page, 'linalg1.md', '```julia\n' + src + '\n```\n'));
+      lone.push(`${label} ${ms.toFixed(0)} ms`);
+    }
+    console.log(`Julia linear algebra: one notebook of the three cells ${laMs.toFixed(0)} ms; each cell alone: ${lone.join(', ')}`);
+
     // 1d. Runs with calls in flight. A burst of calls is kept in flight while the
     // run ends and runs follow at once: every one must work, and none replaces the
     // worker (a Reset keeps the instance).
